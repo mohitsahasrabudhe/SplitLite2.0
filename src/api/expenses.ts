@@ -11,6 +11,19 @@ export type ExpenseType = Schema["Expense"]["type"];
 export type ExpenseParticipantType = Schema["ExpenseParticipant"]["type"];
 export type UserProfileType = Schema["UserProfile"]["type"];
 
+/** Amplify Gen2 returns model fields nested under .data; extract for UI use. */
+export type FlatExpense = { id: string; title: string; amount: number; splitMethod: string; createdAt?: string | null };
+export function toFlatExpense(e: { id?: string | null; data?: { title?: string; amount?: number; splitMethod?: string; [k: string]: unknown }; title?: string; amount?: number; splitMethod?: string; createdAt?: string | null }): FlatExpense {
+  const d = (e as { data?: { title?: string; amount?: number; splitMethod?: string } }).data;
+  return {
+    id: (e as { id?: string }).id ?? "",
+    title: d?.title ?? (e as { title?: string }).title ?? "",
+    amount: d?.amount ?? (e as { amount?: number }).amount ?? 0,
+    splitMethod: d?.splitMethod ?? (e as { splitMethod?: string }).splitMethod ?? "EQUAL",
+    createdAt: (e as { createdAt?: string | null }).createdAt ?? (d as { createdAt?: string } | undefined)?.createdAt,
+  };
+}
+
 /** Create an expense and its participants. Caller must be authenticated. */
 export async function createExpense(params: {
   title: string;
@@ -28,20 +41,21 @@ export async function createExpense(params: {
     totalShares: totalShares ?? undefined,
   });
   if (errors?.length) throw new Error(errors.map((e) => e.message).join(", "));
-  if (!expense?.id) throw new Error("Failed to create expense");
+  const expId = (expense as { id?: string }).id ?? (expense as { data?: { id?: string } }).data?.id;
+  if (!expId) throw new Error("Failed to create expense");
 
   const counts = splitMethod === "BY_SHARES" && participantShareCounts
     ? participantShareCounts
     : participantUserIds.map(() => 1);
   for (let i = 0; i < participantUserIds.length; i++) {
     const { errors: pe } = await client.models.ExpenseParticipant.create({
-      expenseId: expense.id,
+      expenseId: expId,
       userId: participantUserIds[i],
       shareCount: counts[i] ?? 1,
     });
     if (pe?.length) throw new Error(pe.map((e) => e.message).join(", "));
   }
-  return expense as ExpenseType;
+  return toFlatExpense(expense as object) as unknown as ExpenseType;
 }
 
 /**
@@ -62,7 +76,7 @@ export async function updateExpense(
   });
   if (errors?.length) throw new Error(errors.map((e) => e.message).join(", "));
   if (!data) throw new Error("Update returned no data");
-  return data as ExpenseType;
+  return toFlatExpense(data as object) as unknown as ExpenseType;
 }
 
 /** Update participants for an expense: replace all with given userIds and shareCounts. */
@@ -105,16 +119,16 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 /**
  * List expenses where the current user is a participant (participant filtering in app).
  */
-export async function listMyExpenses(userId: string): Promise<ExpenseType[]> {
+export async function listMyExpenses(userId: string): Promise<FlatExpense[]> {
   const { data: participantRows } = await client.models.ExpenseParticipant.list({
     filter: { userId: { eq: userId } },
   });
   const expenseIds = [...new Set((participantRows ?? []).map((p) => p.expenseId).filter(Boolean))] as string[];
   if (expenseIds.length === 0) return [];
-  const expenses: ExpenseType[] = [];
+  const expenses: FlatExpense[] = [];
   for (const id of expenseIds) {
     const { data: exp } = await client.models.Expense.get({ id });
-    if (exp) expenses.push(exp as ExpenseType);
+    if (exp) expenses.push(toFlatExpense(exp as object));
   }
   expenses.sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;

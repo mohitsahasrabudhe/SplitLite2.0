@@ -5,24 +5,22 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listParticipantsForExpense, deleteExpense } from "../api/expenses";
-import type { ExpenseType, ExpenseParticipantType } from "../api/expenses";
+import type { FlatExpense, ExpenseParticipantType } from "../api/expenses";
 import { listAllUsers } from "../api/expenses";
 import { splitEqual, splitByShares } from "../utils/splitCalc";
 import type { UserProfileType } from "../api/expenses";
 import styles from "./ExpenseDetailCard.module.css";
 
 interface ExpenseDetailCardProps {
-  expense: ExpenseType;
+  expense: FlatExpense;
   currentUserId: string;
   onDeleted: () => void;
-  onUpdated: () => void;
 }
 
 export default function ExpenseDetailCard({
   expense,
   currentUserId,
   onDeleted,
-  onUpdated,
 }: ExpenseDetailCardProps) {
   const [participants, setParticipants] = useState<ExpenseParticipantType[]>([]);
   const [users, setUsers] = useState<UserProfileType[]>([]);

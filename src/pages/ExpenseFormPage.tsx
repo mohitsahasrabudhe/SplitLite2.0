@@ -12,7 +12,7 @@ import {
   listAllUsers,
   listParticipantsForExpense,
 } from "../api/expenses";
-import type { ExpenseType, UserProfileType } from "../api/expenses";
+import type { UserProfileType } from "../api/expenses";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
 import styles from "./ExpenseFormPage.module.css";
@@ -47,13 +47,14 @@ export default function ExpenseFormPage() {
         if (cancelled) return;
         setUsers(allUsers);
         if (isEdit && id) {
-          const exp = await client.models.Expense.get({ id });
+          const { data: exp } = await client.models.Expense.get({ id });
           const participants = await listParticipantsForExpense(id);
           if (cancelled) return;
           if (exp) {
-            setTitle(exp.title ?? "");
-            setAmount(String(exp.amount ?? ""));
-            setSplitMethod((exp.splitMethod as "EQUAL" | "BY_SHARES") ?? "EQUAL");
+            const d = (exp as { data?: { title?: string; amount?: number; splitMethod?: string } }).data;
+            setTitle(d?.title ?? (exp as { title?: string }).title ?? "");
+            setAmount(String(d?.amount ?? (exp as { amount?: number }).amount ?? ""));
+            setSplitMethod(((d?.splitMethod ?? (exp as { splitMethod?: string }).splitMethod) ?? "EQUAL") as "EQUAL" | "BY_SHARES");
             const ids = new Set(participants.map((p) => p.userId));
             setSelectedIds(ids);
             const counts: Record<string, number> = {};

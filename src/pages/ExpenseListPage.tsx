@@ -6,13 +6,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { listMyExpenses } from "../api/expenses";
-import type { ExpenseType } from "../api/expenses";
+import type { FlatExpense } from "../api/expenses";
 import ExpenseDetailCard from "../components/ExpenseDetailCard";
 import styles from "./ExpenseListPage.module.css";
 
 export default function ExpenseListPage() {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState<ExpenseType[]>([]);
+  const [expenses, setExpenses] = useState<FlatExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,9 +63,6 @@ export default function ExpenseListPage() {
                 expense={expense}
                 currentUserId={user.userId}
                 onDeleted={() => setExpenses((prev) => prev.filter((e) => e.id !== expense.id))}
-                onUpdated={() => {
-                  listMyExpenses(user.userId).then(setExpenses);
-                }}
               />
             </li>
           ))}
