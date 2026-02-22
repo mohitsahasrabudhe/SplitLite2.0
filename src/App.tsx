@@ -1,39 +1,51 @@
-import { useEffect, useState } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
+/**
+ * Root app: auth gate and routes. Unauthenticated users see AuthPage; others see expense list/form.
+ */
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
+import AuthPage from "./pages/AuthPage";
+import ExpenseListPage from "./pages/ExpenseListPage";
+import ExpenseFormPage from "./pages/ExpenseFormPage";
 
-const client = generateClient<Schema>();
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <p>Loading…</p>;
+  if (!user || user.displayName === "Unknown") return <Navigate to="/auth" replace />;
+  return <>{children}</>;
+}
 
 function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
-
-  useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }, []);
-
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
-  }
-
   return (
-    <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
-      </div>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/auth" element={<AuthPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <ExpenseListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expense/new"
+          element={
+            <ProtectedRoute>
+              <ExpenseFormPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expense/:id/edit"
+          element={
+            <ProtectedRoute>
+              <ExpenseFormPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

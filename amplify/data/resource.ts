@@ -1,17 +1,45 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 
-/*== STEP 1 ===============================================================
-The section below creates a Todo database table with a "content" field. Try
-adding a new "isDone" field as a boolean. The authorization rule below
-specifies that any user authenticated via an API key can "create", "read",
-"update", and "delete" any "Todo" records.
-=========================================================================*/
+/**
+ * SplitLite data schema.
+ * Auth: userPool (Cognito). Only authenticated users can access; participant
+ * checks for expense mutate are enforced in the app layer.
+ */
 const schema = a.schema({
-  Todo: a
+  // One profile per user; stores displayName for expense titles and participant lists.
+  UserProfile: a
     .model({
-      content: a.string(),
+      displayName: a.string().required(),
     })
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [
+      allow.owner(), // create/read/update/delete own profile
+      allow.authenticated().to(["read"]), // any signed-in user can read all profiles (participant picker)
+    ]),
+
+  // Expense: amount, split method, and optional title (auto from participant names or manual).
+  Expense: a
+    .model({
+      title: a.string().required(),
+      amount: a.float().required(),
+      splitMethod: a.enum(["EQUAL", "BY_SHARES"]),
+      totalShares: a.integer(), // required when splitMethod === BY_SHARES; sum of participants' shareCount
+      participants: a.hasMany("ExpenseParticipant", "expenseId"),
+    })
+    .authorization((allow) => [
+      allow.authenticated(), // create/read/update/delete; only participants may mutate (enforced in app)
+    ]),
+
+  // Links a user to an expense with optional share count for BY_SHARES.
+  ExpenseParticipant: a
+    .model({
+      expenseId: a.id().required(),
+      expense: a.belongsTo("Expense", "expenseId"),
+      userId: a.string().required(), // Cognito sub (owner id from UserProfile)
+      shareCount: a.integer(), // for BY_SHARES; default 1 for EQUAL
+    })
+    .authorization((allow) => [
+      allow.authenticated(), // participant filtering enforced in app
+    ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -19,39 +47,9 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: "apiKey",
-    // API Key is used for a.allow.public() rules
+    defaultAuthorizationMode: "userPool",
     apiKeyAuthorizationMode: {
       expiresInDays: 30,
     },
   },
 });
-
-/*== STEP 2 ===============================================================
-Go to your frontend source code. From your client-side code, generate a
-Data client to make CRUDL requests to your table. (THIS SNIPPET WILL ONLY
-WORK IN THE FRONTEND CODE FILE.)
-
-Using JavaScript or Next.js React Server Components, Middleware, Server 
-Actions or Pages Router? Review how to generate Data clients for those use
-cases: https://docs.amplify.aws/gen2/build-a-backend/data/connect-to-API/
-=========================================================================*/
-
-/*
-"use client"
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "@/amplify/data/resource";
-
-const client = generateClient<Schema>() // use this Data client for CRUDL requests
-*/
-
-/*== STEP 3 ===============================================================
-Fetch records from the database and use them in your frontend component.
-(THIS SNIPPET WILL ONLY WORK IN THE FRONTEND CODE FILE.)
-=========================================================================*/
-
-/* For example, in a React component, you can use this snippet in your
-  function's RETURN statement */
-// const { data: todos } = await client.models.Todo.list()
-
-// return <ul>{todos.map(todo => <li key={todo.id}>{todo.content}</li>)}</ul>
