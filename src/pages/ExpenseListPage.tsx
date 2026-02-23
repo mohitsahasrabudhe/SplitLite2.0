@@ -142,12 +142,12 @@ export default function ExpenseListPage() {
 
         const withParticipants: ExpenseWithPeople[] = await Promise.all(
           rawExpenses.map(async (exp: any) => {
-            console.log("RAW EXPENSE:", exp);
+            console.log("RAW EXPENSE FROM AMPLIFY:", exp);
             const parts = await listParticipantsForExpense(exp.id);
 
             return {
               ...exp,
-  paidBy: exp.paidBy ?? exp.data?.paidBy, // 👈 important
+ paidBy: exp.paidBy, // 👈 important
   participants: parts.map((p) => ({
     userId: p.userId,
     displayName: userMap.get(p.userId) ?? p.userId,

@@ -55,7 +55,17 @@ export default function ExpenseFormPage() {
         setSelectedIds(new Set([myId]));
 
         if (isEdit && id) {
-          const { data: exp } = await client.models.Expense.get({ id });
+          const { data: exp } = await client.models.Expense.get({ id },{
+            selectionSet: [
+              "id",
+              "title",
+              "amount",
+              "splitMethod",
+              "totalShares",
+              "paidBy",       // ✅ THIS WAS MISSING
+              "createdAt",
+            ],
+          });
           const participants = await listParticipantsForExpense(id);
 
           if (!cancelled && exp) {
