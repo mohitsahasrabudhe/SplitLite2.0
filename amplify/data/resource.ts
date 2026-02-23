@@ -24,6 +24,7 @@ const schema = a.schema({
       splitMethod: a.enum(["EQUAL", "BY_SHARES"]),
       totalShares: a.integer(), // required when splitMethod === BY_SHARES; sum of participants' shareCount
       participants: a.hasMany("ExpenseParticipant", "expenseId"),
+      paidBy: a.string(),
     })
     .authorization((allow) => [
       allow.authenticated(), // create/read/update/delete; only participants may mutate (enforced in app)

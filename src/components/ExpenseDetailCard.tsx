@@ -60,7 +60,6 @@ export default function ExpenseDetailCard({
 
   // Map participant userId (Cognito sub) to displayName; owner on UserProfile is set by Amplify.
   const userIdToName = (userId: string) => {
-    if (userId === currentUserId) return "You";
     const profile = users.find((u) => {
       const owner = (u as UserProfileType & { owner?: string }).owner;
       return owner === userId || owner?.endsWith(userId);

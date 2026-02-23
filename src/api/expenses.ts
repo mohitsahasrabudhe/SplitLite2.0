@@ -32,6 +32,7 @@ export async function createExpense(params: {
   totalShares?: number;
   participantUserIds: string[];
   participantShareCounts?: number[]; // required when splitMethod === BY_SHARES, same order as participantUserIds
+  paidBy: string;
 }): Promise<ExpenseType> {
   const { title, amount, splitMethod, totalShares, participantUserIds, participantShareCounts } = params;
   const { data: expense, errors } = await client.models.Expense.create({

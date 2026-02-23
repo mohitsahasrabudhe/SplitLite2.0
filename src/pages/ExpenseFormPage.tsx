@@ -1,7 +1,3 @@
-/**
- * Create or edit an expense. Title auto-fills from participant display names; user can override.
- * Split methods: Equal and By Shares (with per-participant share count).
- */
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -28,70 +24,90 @@ export default function ExpenseFormPage() {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [splitMethod, setSplitMethod] = useState<"EQUAL" | "BY_SHARES">("EQUAL");
+
+  const [users, setUsers] = useState<UserProfileType[]>([]);
+  const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
-  const [users, setUsers] = useState<UserProfileType[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load users for participant picker; when editing, load expense and participants
+  // Normalize Amplify user id safely
+  const resolveUserId = (u: UserProfileType) =>
+    (u as any).owner ?? (u as any).id;
+
+  const resolveName = (u: UserProfileType) =>
+    u.displayName ?? resolveUserId(u);
+
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+
     (async () => {
-      setLoading(true);
-      setError(null);
       try {
         const allUsers = await listAllUsers();
         if (cancelled) return;
         setUsers(allUsers);
+
+        const myId = user.userId;
+        setSelectedIds(new Set([myId]));
+
         if (isEdit && id) {
           const { data: exp } = await client.models.Expense.get({ id });
           const participants = await listParticipantsForExpense(id);
-          if (cancelled) return;
-          if (exp) {
-            const d = (exp as { data?: { title?: string; amount?: number; splitMethod?: string } }).data;
-            setTitle(d?.title ?? (exp as { title?: string }).title ?? "");
-            setAmount(String(d?.amount ?? (exp as { amount?: number }).amount ?? ""));
-            setSplitMethod(((d?.splitMethod ?? (exp as { splitMethod?: string }).splitMethod) ?? "EQUAL") as "EQUAL" | "BY_SHARES");
+
+          if (!cancelled && exp) {
+            const d = (exp as any).data ?? exp;
+            setTitle(d.title ?? "");
+            setAmount(String(d.amount ?? ""));
+            setSplitMethod((d.splitMethod ?? "EQUAL") as any);
+
             const ids = new Set(participants.map((p) => p.userId));
+            ids.add(myId);
             setSelectedIds(ids);
+
             const counts: Record<string, number> = {};
-            participants.forEach((p) => {
-              counts[p.userId] = p.shareCount ?? 1;
-            });
+            participants.forEach((p) => (counts[p.userId] = p.shareCount ?? 1));
             setShareCounts(counts);
           }
         }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
+      } catch {
+        if (!cancelled) setError("Failed to load data");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, isEdit, id]);
 
-  // Auto-populate title from selected participants' display names (comma-separated); user can override. Skip in edit so loaded title is preserved.
-  useEffect(() => {
-    if (isEdit || users.length === 0) return;
-    const names = [...selectedIds].map((uid) => {
-      if (uid === user?.userId) return "You";
-      const p = users.find((u) => {
-        const o = (u as UserProfileType & { owner?: string }).owner;
-        return o === uid || o?.endsWith(uid);
-      });
-      return p?.displayName ?? uid;
-    });
-    setTitle(names.join(", "));
-  }, [selectedIds, users, user?.userId]);
+  if (!user) return null;
+  const myId = user.userId;
 
-  const toggleParticipant = (userId: string) => {
+  const results = query
+    ? users.filter((u) => {
+        const name = resolveName(u).toLowerCase();
+        return (
+          name.includes(query.toLowerCase()) &&
+          !selectedIds.has(resolveUserId(u))
+        );
+      })
+    : [];
+
+  const addUser = (id: string) => {
+    setSelectedIds((prev) => new Set([...prev, id]));
+    setQuery("");
+  };
+
+  const removeUser = (id: string) => {
+    if (id === myId) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      next.delete(id);
       return next;
     });
   };
@@ -100,38 +116,55 @@ export default function ExpenseFormPage() {
     setShareCounts((prev) => ({ ...prev, [userId]: Math.max(1, value) }));
   };
 
-  const getDisplayName = (profile: UserProfileType & { owner?: string }) => {
-    if (profile.owner === user?.userId || profile.owner?.endsWith(user?.userId ?? "")) return "You";
-    return profile.displayName ?? profile.owner ?? "?";
-  };
+  const titleValid = /^[A-Za-z ]+$/.test(title.trim());
+  const amountValid = /^\d+(\.\d{1,2})?$/.test(amount);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    const amt = parseFloat(amount);
-    if (isNaN(amt) || amt <= 0) {
+
+    if (!titleValid) {
+      setError("Title must contain letters only");
+      return;
+    }
+
+    if (!amountValid) {
       setError("Enter a valid amount");
       return;
     }
-    const participantUserIds = [...selectedIds];
-    if (participantUserIds.length === 0) {
-      setError("Select at least one participant");
+
+    if (selectedIds.size < 2) {
+      setError("Select at least two participants");
       return;
     }
-    setError(null);
+
+    if (!selectedIds.has(myId)) {
+      setError("You must be included");
+      return;
+    }
+
+    const participantUserIds = [...selectedIds];
+    const amt = parseFloat(amount);
+
     setSaving(true);
+    setError(null);
+
     try {
+      const totalShares =
+        splitMethod === "BY_SHARES"
+          ? participantUserIds.reduce(
+              (s, uid) => s + (shareCounts[uid] ?? 1),
+              0
+            )
+          : undefined;
+
       if (isEdit && id) {
-        const totalShares =
-          splitMethod === "BY_SHARES"
-            ? participantUserIds.reduce((s, uid) => s + (shareCounts[uid] ?? 1), 0)
-            : undefined;
         await updateExpense(id, {
           title: title.trim(),
           amount: amt,
           splitMethod,
           totalShares,
         });
+
         await setExpenseParticipants(
           id,
           participantUserIds,
@@ -139,107 +172,115 @@ export default function ExpenseFormPage() {
             ? participantUserIds.map((uid) => shareCounts[uid] ?? 1)
             : undefined
         );
-        navigate("/");
       } else {
-        const totalShares =
-          splitMethod === "BY_SHARES"
-            ? participantUserIds.reduce((s, uid) => s + (shareCounts[uid] ?? 1), 0)
-            : undefined;
-        const shareCountsArr =
-          splitMethod === "BY_SHARES"
-            ? participantUserIds.map((uid) => shareCounts[uid] ?? 1)
-            : undefined;
         await createExpense({
           title: title.trim(),
           amount: amt,
           splitMethod,
           totalShares,
+          paidBy: myId,
           participantUserIds,
-          participantShareCounts: shareCountsArr,
+          participantShareCounts:
+            splitMethod === "BY_SHARES"
+              ? participantUserIds.map((uid) => shareCounts[uid] ?? 1)
+              : undefined,
         });
-        navigate("/");
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+
+      navigate("/");
+    } catch {
+      setError("Save failed");
     } finally {
       setSaving(false);
     }
   };
 
-  if (!user) return null;
-  if (loading) {
-    return (
-      <div className={styles.container}>
-        <p className={styles.loading}>Loading…</p>
-      </div>
-    );
-  }
+  if (loading) return <p className={styles.loading}>Loading…</p>;
 
   return (
     <div className={styles.container}>
       <h1 className={styles.heading}>{isEdit ? "Edit expense" : "New expense"}</h1>
       {error && <p className={styles.error}>{error}</p>}
+
       <form onSubmit={handleSubmit}>
         <div className={styles.formGroup}>
-          <label className={styles.label}>Title</label>
+          <label>Title</label>
           <input
             className={styles.input}
-            type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Dinner, Alex, Sam"
             required
+            placeholder="Dinner"
           />
-          <small>Auto-filled from participants; you can change it.</small>
         </div>
+
         <div className={styles.formGroup}>
-          <label className={styles.label}>Amount</label>
+          <label>Amount</label>
           <input
             className={styles.input}
-            type="number"
-            step="0.01"
-            min="0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
+            placeholder="25.00"
           />
         </div>
+
         <div className={styles.formGroup}>
-          <label className={styles.label}>Split method</label>
+          <label>Split method</label>
           <select
             className={styles.select}
             value={splitMethod}
-            onChange={(e) => setSplitMethod(e.target.value as "EQUAL" | "BY_SHARES")}
+            onChange={(e) => setSplitMethod(e.target.value as any)}
           >
             <option value="EQUAL">Equal</option>
             <option value="BY_SHARES">By shares</option>
           </select>
         </div>
+
         <div className={styles.formGroup}>
-          <span className={styles.label}>Participants</span>
-          <div className={styles.participants}>
-            {users.map((profile) => {
-              const profileWithOwner = profile as UserProfileType & { owner?: string };
-              const uid = profileWithOwner.owner ?? (profile as { id: string }).id;
-              const name = getDisplayName(profileWithOwner);
+          <label>Participants</label>
+
+          <input
+            className={styles.input}
+            placeholder="Search people…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+
+          {results.map((u) => {
+            const uid = resolveUserId(u);
+            return (
+              <div
+                key={uid}
+                className={styles.searchResult}
+                onClick={() => addUser(uid)}
+              >
+                {resolveName(u)}
+              </div>
+            );
+          })}
+
+          <div className={styles.selectedList}>
+            {[...selectedIds].map((uid) => {
+              const u = users.find((x) => resolveUserId(x) === uid);
               return (
-                <div key={uid} className={styles.participantRow}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      className={styles.checkbox}
-                      checked={selectedIds.has(uid)}
-                      onChange={() => toggleParticipant(uid)}
-                    />
-                    {name}
-                  </label>
-                  {splitMethod === "BY_SHARES" && selectedIds.has(uid) && (
+                <div key={uid} className={styles.chip}>
+                  {u ? resolveName(u) : uid}
+                  {uid !== myId && (
+                    <button type="button" onClick={() => removeUser(uid)}>
+                      ×
+                    </button>
+                  )}
+
+                  {splitMethod === "BY_SHARES" && (
                     <input
                       type="number"
                       min={1}
                       className={styles.shareInput}
                       value={shareCounts[uid] ?? 1}
-                      onChange={(e) => setShare(uid, parseInt(e.target.value, 10) || 1)}
+                      onChange={(e) =>
+                        setShare(uid, parseInt(e.target.value, 10) || 1)
+                      }
                     />
                   )}
                 </div>
@@ -247,11 +288,12 @@ export default function ExpenseFormPage() {
             })}
           </div>
         </div>
+
         <div className={styles.actions}>
-          <button type="submit" className={styles.button} disabled={saving}>
+          <button className={styles.button} disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Update" : "Create"}
           </button>
-          <Link to="/" className={`${styles.button} ${styles.buttonSecondary}`}>
+          <Link to="/" className={styles.buttonSecondary}>
             Cancel
           </Link>
         </div>
