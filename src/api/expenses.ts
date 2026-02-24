@@ -21,6 +21,7 @@ export type FlatExpense = {
   amount: number;
   splitMethod: string;
   paidBy?: string;
+  groupName?: string;        // ✅ NEW
   createdAt?: string | null;
 };
 
@@ -31,6 +32,7 @@ export function toFlatExpense(e: any): FlatExpense {
     amount: e.amount ?? 0,
     splitMethod: e.splitMethod ?? "EQUAL",
     paidBy: e.paidBy,
+    groupName: e.groupName,   // ✅ NEW
     createdAt: e.createdAt ?? null,
   };
 }
@@ -47,6 +49,7 @@ export async function createExpense(params: {
   participantUserIds: string[];
   participantShareCounts?: number[];
   paidBy: string;
+  groupName?: string;        // ✅ NEW
 }): Promise<ExpenseType> {
   const {
     title,
@@ -56,6 +59,7 @@ export async function createExpense(params: {
     participantUserIds,
     participantShareCounts,
     paidBy,
+    groupName,
   } = params;
 
   const { data: expense, errors } = await client.models.Expense.create({
@@ -64,6 +68,7 @@ export async function createExpense(params: {
     splitMethod,
     totalShares: totalShares ?? undefined,
     paidBy,
+    groupName: groupName ?? undefined, // ✅ NEW
   });
 
   if (errors?.length)
@@ -102,6 +107,7 @@ export async function updateExpense(
     amount?: number;
     splitMethod?: "EQUAL" | "BY_SHARES";
     totalShares?: number;
+    groupName?: string;      // ✅ NEW
   }
 ): Promise<ExpenseType> {
   const { data, errors } = await client.models.Expense.update({
@@ -199,6 +205,7 @@ export async function listMyExpenses(userId: string): Promise<FlatExpense[]> {
           "amount",
           "splitMethod",
           "totalShares",
+          "groupName",   // ✅ NEW
           "paidBy",
           "createdAt",
         ],

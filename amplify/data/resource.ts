@@ -12,22 +12,26 @@ const schema = a.schema({
       displayName: a.string().required(),
     })
     .authorization((allow) => [
-      allow.owner(), // create/read/update/delete own profile
-      allow.authenticated().to(["read"]), // any signed-in user can read all profiles (participant picker)
+      allow.owner(),
+      allow.authenticated().to(["read"]),
     ]),
 
-  // Expense: amount, split method, and optional title (auto from participant names or manual).
+  // Expense: core accounting entity
   Expense: a
     .model({
       title: a.string().required(),
       amount: a.float().required(),
       splitMethod: a.enum(["EQUAL", "BY_SHARES"]),
-      totalShares: a.integer(), // required when splitMethod === BY_SHARES; sum of participants' shareCount
+      totalShares: a.integer(),
+
+      // ✅ NEW — optional human grouping (Miami Trip, Apartment, etc)
+      groupName: a.string(),
+
       participants: a.hasMany("ExpenseParticipant", "expenseId"),
       paidBy: a.string(),
     })
     .authorization((allow) => [
-      allow.authenticated(), // create/read/update/delete; only participants may mutate (enforced in app)
+      allow.authenticated(),
     ]),
 
   // Links a user to an expense with optional share count for BY_SHARES.
@@ -35,11 +39,11 @@ const schema = a.schema({
     .model({
       expenseId: a.id().required(),
       expense: a.belongsTo("Expense", "expenseId"),
-      userId: a.string().required(), // Cognito sub (owner id from UserProfile)
-      shareCount: a.integer(), // for BY_SHARES; default 1 for EQUAL
+      userId: a.string().required(),
+      shareCount: a.integer(),
     })
     .authorization((allow) => [
-      allow.authenticated(), // participant filtering enforced in app
+      allow.authenticated(),
     ]),
 });
 

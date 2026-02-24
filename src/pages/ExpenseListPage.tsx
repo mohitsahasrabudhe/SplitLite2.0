@@ -23,15 +23,22 @@ type ExpenseGroup = {
 const resolveUserId = (u: UserProfileType) =>
   (u as any).owner ?? (u as any).id;
 
-function groupByParticipants(expenses: ExpenseWithPeople[]): ExpenseGroup[] {
+/* ========================= */
+/* Grouping logic (FIXED)   */
+/* ========================= */
+
+function deriveParticipantKey(exp: ExpenseWithPeople) {
+  return exp.participants
+    .map((p) => p.displayName)
+    .sort((a, b) => a.localeCompare(b))
+    .join(" + ");
+}
+
+function groupExpenses(expenses: ExpenseWithPeople[]): ExpenseGroup[] {
   const map = new Map<string, ExpenseWithPeople[]>();
 
   for (const exp of expenses) {
-    const names = exp.participants
-      .map((p) => p.displayName)
-      .sort((a, b) => a.localeCompare(b));
-
-    const key = names.join(" + ");
+    const key = exp.groupName?.trim() || deriveParticipantKey(exp);
 
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(exp);
@@ -69,10 +76,7 @@ function computeNet(group: ExpenseGroup) {
   return net;
 }
 
-function buildSettlements(
-  net: Record<string, number>,
-  group: ExpenseGroup
-) {
+function buildSettlements(net: Record<string, number>, group: ExpenseGroup) {
   const nameMap = new Map<string, string>();
 
   for (const exp of group.expenses) {
@@ -116,8 +120,13 @@ function buildSettlements(
   return results;
 }
 
+/* ========================= */
+/* Main component           */
+/* ========================= */
+
 export default function ExpenseListPage() {
   const { user } = useAuth();
+
   const [expenses, setExpenses] = useState<ExpenseWithPeople[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,15 +151,14 @@ export default function ExpenseListPage() {
 
         const withParticipants: ExpenseWithPeople[] = await Promise.all(
           rawExpenses.map(async (exp: any) => {
-            console.log("RAW EXPENSE FROM AMPLIFY:", exp);
             const parts = await listParticipantsForExpense(exp.id);
 
             return {
               ...exp,
- paidBy: exp.paidBy, // 👈 important
-  participants: parts.map((p) => ({
-    userId: p.userId,
-    displayName: userMap.get(p.userId) ?? p.userId,
+              paidBy: exp.paidBy,
+              participants: parts.map((p) => ({
+                userId: p.userId,
+                displayName: userMap.get(p.userId) ?? p.userId,
               })),
             };
           })
@@ -166,7 +174,7 @@ export default function ExpenseListPage() {
   }, [user]);
 
   const grouped = useMemo(
-    () => groupByParticipants(expenses),
+    () => groupExpenses(expenses),
     [expenses]
   );
 
@@ -265,7 +273,7 @@ export default function ExpenseListPage() {
                     <ul className={styles.list}>
                       {group.expenses.map((expense) => {
                         const payerName = expense.participants.find(
-                          p => p.userId === expense.paidBy
+                          (p) => p.userId === expense.paidBy
                         )?.displayName;
 
                         return (

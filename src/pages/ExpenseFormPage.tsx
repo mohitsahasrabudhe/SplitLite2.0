@@ -23,6 +23,7 @@ export default function ExpenseFormPage() {
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
+  const [groupName, setGroupName] = useState(""); // ✅ NEW
   const [splitMethod, setSplitMethod] = useState<"EQUAL" | "BY_SHARES">("EQUAL");
 
   const [users, setUsers] = useState<UserProfileType[]>([]);
@@ -34,7 +35,6 @@ export default function ExpenseFormPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Normalize Amplify user id safely
   const resolveUserId = (u: UserProfileType) =>
     (u as any).owner ?? (u as any).id;
 
@@ -55,23 +55,30 @@ export default function ExpenseFormPage() {
         setSelectedIds(new Set([myId]));
 
         if (isEdit && id) {
-          const { data: exp } = await client.models.Expense.get({ id },{
-            selectionSet: [
-              "id",
-              "title",
-              "amount",
-              "splitMethod",
-              "totalShares",
-              "paidBy",       // ✅ THIS WAS MISSING
-              "createdAt",
-            ],
-          });
+          const { data: exp } = await client.models.Expense.get(
+            { id },
+            {
+              selectionSet: [
+                "id",
+                "title",
+                "amount",
+                "splitMethod",
+                "totalShares",
+                "groupName", // ✅ NEW
+                "paidBy",
+                "createdAt",
+              ],
+            }
+          );
+
           const participants = await listParticipantsForExpense(id);
 
           if (!cancelled && exp) {
             const d = (exp as any).data ?? exp;
+
             setTitle(d.title ?? "");
             setAmount(String(d.amount ?? ""));
+            setGroupName(d.groupName ?? ""); // ✅ NEW
             setSplitMethod((d.splitMethod ?? "EQUAL") as any);
 
             const ids = new Set(participants.map((p) => p.userId));
@@ -79,7 +86,9 @@ export default function ExpenseFormPage() {
             setSelectedIds(ids);
 
             const counts: Record<string, number> = {};
-            participants.forEach((p) => (counts[p.userId] = p.shareCount ?? 1));
+            participants.forEach(
+              (p) => (counts[p.userId] = p.shareCount ?? 1)
+            );
             setShareCounts(counts);
           }
         }
@@ -173,6 +182,7 @@ export default function ExpenseFormPage() {
           amount: amt,
           splitMethod,
           totalShares,
+          groupName: groupName.trim() || undefined, // ✅ NEW
         });
 
         await setExpenseParticipants(
@@ -188,6 +198,7 @@ export default function ExpenseFormPage() {
           amount: amt,
           splitMethod,
           totalShares,
+          groupName: groupName.trim() || undefined, // ✅ NEW
           paidBy: myId,
           participantUserIds,
           participantShareCounts:
@@ -209,7 +220,10 @@ export default function ExpenseFormPage() {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.heading}>{isEdit ? "Edit expense" : "New expense"}</h1>
+      <h1 className={styles.heading}>
+        {isEdit ? "Edit expense" : "New expense"}
+      </h1>
+
       {error && <p className={styles.error}>{error}</p>}
 
       <form onSubmit={handleSubmit}>
@@ -221,6 +235,16 @@ export default function ExpenseFormPage() {
             onChange={(e) => setTitle(e.target.value)}
             required
             placeholder="Dinner"
+          />
+        </div>
+
+        <div className={styles.formGroup}>
+          <label>Group (optional)</label>
+          <input
+            className={styles.input}
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            placeholder="Miami Trip"
           />
         </div>
 
@@ -276,8 +300,12 @@ export default function ExpenseFormPage() {
               return (
                 <div key={uid} className={styles.chip}>
                   {u ? resolveName(u) : uid}
+
                   {uid !== myId && (
-                    <button type="button" onClick={() => removeUser(uid)}>
+                    <button
+                      type="button"
+                      onClick={() => removeUser(uid)}
+                    >
                       ×
                     </button>
                   )}
@@ -303,6 +331,7 @@ export default function ExpenseFormPage() {
           <button className={styles.button} disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Update" : "Create"}
           </button>
+
           <Link to="/" className={styles.buttonSecondary}>
             Cancel
           </Link>
