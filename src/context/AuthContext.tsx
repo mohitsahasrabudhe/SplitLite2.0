@@ -1,8 +1,10 @@
-/**
- * Auth context: current Cognito user and their UserProfile displayName.
- * Provides loading and error state for auth and profile fetch.
- */
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { getCurrentUser, signOut as amplifySignOut } from "aws-amplify/auth";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
@@ -21,6 +23,7 @@ interface AuthContextValue {
   error: string | null;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  completeOnboarding: (displayName: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -31,27 +34,38 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-async function fetchDisplayName(userId: string): Promise<string> {
-  const { data } = await client.models.UserProfile.list();
-  const profiles = data ?? [];
-  const profile = profiles.find(
-    (p) => (p as { owner?: string }).owner === userId || (p as { owner?: string }).owner?.endsWith(userId)
-  );
-  return profile?.displayName ?? "Unknown";
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshProfile = useCallback(async () => {
+  const loadUser = useCallback(async () => {
     try {
       const current = await getCurrentUser();
-      const userId = current.userId;
       const email = current.signInDetails?.loginId ?? "";
-      const displayName = await fetchDisplayName(userId);
-      setUser({ userId, email, displayName });
+
+      if (!email) throw new Error("Email missing from Cognito");
+
+      const { data } = await client.models.UserProfile.list({
+        filter: { email: { eq: email } },
+      });
+
+      const profile = data?.[0];
+
+      if (!profile) {
+        setUser({
+          userId: current.userId,
+          email,
+          displayName: "",
+        });
+      } else {
+        setUser({
+          userId: current.userId,
+          email,
+          displayName: profile.displayName,
+        });
+      }
+
       setError(null);
     } catch (e) {
       setUser(null);
@@ -62,26 +76,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const current = await getCurrentUser();
-        if (cancelled) return;
-        const userId = current.userId;
-        const email = current.signInDetails?.loginId ?? "";
-        const displayName = await fetchDisplayName(userId);
-        if (cancelled) return;
-        setUser({ userId, email, displayName });
-        setError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setUser(null);
-        setError(e instanceof Error ? e.message : "Auth error");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    loadUser();
+  }, [loadUser]);
+
+  const refreshProfile = useCallback(async () => {
+    setLoading(true);
+    await loadUser();
+  }, [loadUser]);
+
+  // ✅ THIS IS THE KEY FIX — optimistic onboarding completion
+  const completeOnboarding = useCallback((displayName: string) => {
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            displayName,
+          }
+        : prev
+    );
   }, []);
 
   const signOut = useCallback(async () => {
@@ -94,13 +106,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value: AuthContextValue = {
-    user,
-    loading,
-    error,
-    signOut,
-    refreshProfile,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        error,
+        signOut,
+        refreshProfile,
+        completeOnboarding,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }

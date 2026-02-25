@@ -2,30 +2,67 @@ import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 
 /**
  * SplitLite data schema.
- * Auth: userPool (Cognito). Only authenticated users can access; participant
- * checks for expense mutate are enforced in the app layer.
+ * Auth: userPool (Cognito).
+ *
+ * Design:
+ * - Expenses can be direct (no groupId)
+ * - OR belong to a Group (explicit)
+ * - Groups have real membership join table
+ * - UserProfile stores displayName + email (for safe search)
  */
+
 const schema = a.schema({
-  // One profile per user; stores displayName for expense titles and participant lists.
+  /* =========================
+     User profile
+     ========================= */
   UserProfile: a
     .model({
       displayName: a.string().required(),
+      email: a.string().required(), // ✅ REQUIRED for search & identity
     })
     .authorization((allow) => [
       allow.owner(),
       allow.authenticated().to(["read"]),
     ]),
 
-  // Expense: core accounting entity
+  /* =========================
+     Group
+     ========================= */
+  Group: a
+    .model({
+      name: a.string().required(),
+      members: a.hasMany("GroupMember", "groupId"),
+    })
+    .authorization((allow) => [
+      allow.authenticated(),
+    ]),
+
+  /* =========================
+     Group membership (JOIN TABLE)
+     ========================= */
+  GroupMember: a
+    .model({
+      groupId: a.id().required(),
+      group: a.belongsTo("Group", "groupId"),
+
+      userId: a.string().required(),
+    })
+    .authorization((allow) => [
+      allow.authenticated(),
+    ]),
+
+  /* =========================
+     Expense
+     ========================= */
   Expense: a
     .model({
       title: a.string().required(),
       amount: a.float().required(),
-      splitMethod: a.enum(["EQUAL", "BY_SHARES"]),
+      splitMethod: a.enum(["EQUAL", "BY_SHARES", "BY_PERCENT", "FULL"]),
       totalShares: a.integer(),
 
-      // ✅ NEW — optional human grouping (Miami Trip, Apartment, etc)
-      groupName: a.string(),
+      // null = direct expense
+      groupId: a.id(),
 
       participants: a.hasMany("ExpenseParticipant", "expenseId"),
       paidBy: a.string(),
@@ -34,11 +71,14 @@ const schema = a.schema({
       allow.authenticated(),
     ]),
 
-  // Links a user to an expense with optional share count for BY_SHARES.
+  /* =========================
+     Expense participants
+     ========================= */
   ExpenseParticipant: a
     .model({
       expenseId: a.id().required(),
       expense: a.belongsTo("Expense", "expenseId"),
+
       userId: a.string().required(),
       shareCount: a.integer(),
     })

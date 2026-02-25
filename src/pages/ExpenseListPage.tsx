@@ -5,188 +5,245 @@ import {
   listMyExpenses,
   listParticipantsForExpense,
   listAllUsers,
+  listMyGroups,
 } from "../api/expenses";
-import type { FlatExpense, UserProfileType } from "../api/expenses";
+import type {
+  FlatExpense,
+  UserProfileType,
+  GroupType,
+} from "../api/expenses";
 import ExpenseDetailCard from "../components/ExpenseDetailCard";
 import styles from "./ExpenseListPage.module.css";
 
 type ExpenseWithPeople = FlatExpense & {
   participants: { userId: string; displayName: string }[];
-  paidBy?: string;
 };
-
-type ExpenseGroup = {
-  key: string;
-  expenses: ExpenseWithPeople[];
-};
-
-const resolveUserId = (u: UserProfileType) =>
-  (u as any).owner ?? (u as any).id;
-
-/* ========================= */
-/* Grouping logic (FIXED)   */
-/* ========================= */
-
-function deriveParticipantKey(exp: ExpenseWithPeople) {
-  return exp.participants
-    .map((p) => p.displayName)
-    .sort((a, b) => a.localeCompare(b))
-    .join(" + ");
-}
-
-function groupExpenses(expenses: ExpenseWithPeople[]): ExpenseGroup[] {
-  const map = new Map<string, ExpenseWithPeople[]>();
-
-  for (const exp of expenses) {
-    const key = exp.groupName?.trim() || deriveParticipantKey(exp);
-
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(exp);
-  }
-
-  return Array.from(map.entries()).map(([key, expenses]) => ({
-    key,
-    expenses: expenses.sort(
-      (a, b) =>
-        new Date(b.createdAt ?? 0).getTime() -
-        new Date(a.createdAt ?? 0).getTime()
-    ),
-  }));
-}
-
-/* ========================= */
-/* Net balance helpers      */
-/* ========================= */
-
-function computeNet(group: ExpenseGroup) {
-  const net: Record<string, number> = {};
-
-  for (const exp of group.expenses) {
-    if (!exp.paidBy) continue;
-
-    net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
-
-    const perPerson = exp.amount / exp.participants.length;
-
-    for (const p of exp.participants) {
-      net[p.userId] = (net[p.userId] ?? 0) - perPerson;
-    }
-  }
-
-  return net;
-}
-
-function buildSettlements(net: Record<string, number>, group: ExpenseGroup) {
-  const nameMap = new Map<string, string>();
-
-  for (const exp of group.expenses) {
-    for (const p of exp.participants) {
-      nameMap.set(p.userId, p.displayName);
-    }
-  }
-
-  const owed: [string, number][] = [];
-  const owes: [string, number][] = [];
-
-  for (const [user, amt] of Object.entries(net)) {
-    if (amt > 0.001) owed.push([user, amt]);
-    if (amt < -0.001) owes.push([user, -amt]);
-  }
-
-  const results: string[] = [];
-
-  let i = 0;
-  let j = 0;
-
-  while (i < owes.length && j < owed.length) {
-    const [debtorId, debt] = owes[i];
-    const [creditorId, credit] = owed[j];
-
-    const amount = Math.min(debt, credit);
-
-    results.push(
-      `${nameMap.get(debtorId)} owes ${nameMap.get(
-        creditorId
-      )} $${amount.toFixed(2)}`
-    );
-
-    owes[i][1] -= amount;
-    owed[j][1] -= amount;
-
-    if (owes[i][1] <= 0.001) i++;
-    if (owed[j][1] <= 0.001) j++;
-  }
-
-  return results;
-}
-
-/* ========================= */
-/* Main component           */
-/* ========================= */
 
 export default function ExpenseListPage() {
   const { user } = useAuth();
+  if (!user) return null;
+
+  const currentUser = user;
 
   const [expenses, setExpenses] = useState<ExpenseWithPeople[]>([]);
+  const [groups, setGroups] = useState<GroupType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [selectedView, setSelectedView] = useState("__summary__");
+  const [selected, setSelected] = useState<string>("__summary__");
 
   useEffect(() => {
-    if (!user) return;
-
     (async () => {
       try {
         setLoading(true);
 
-        const [rawExpenses, users] = await Promise.all([
-          listMyExpenses(user.userId),
+        const [rawExpenses, users, myGroups] = await Promise.all([
+          listMyExpenses(currentUser.userId),
           listAllUsers(),
+          listMyGroups(currentUser.userId),
         ]);
 
+        const cleanUsers = users.filter((u) => u && u.id);
+        const cleanGroups = myGroups.filter((g) => g && g.id);
+
+        setGroups(cleanGroups);
+
         const userMap = new Map(
-          users.map((u) => [resolveUserId(u), u.displayName])
+          cleanUsers.map((u) => [u.id, u.displayName])
         );
 
         const withParticipants: ExpenseWithPeople[] = await Promise.all(
-          rawExpenses.map(async (exp: any) => {
-            const parts = await listParticipantsForExpense(exp.id);
+          rawExpenses
+            .filter((e: any) => e && e.id)
+            .map(async (exp: any) => {
+              const parts = await listParticipantsForExpense(exp.id);
 
-            return {
-              ...exp,
-              paidBy: exp.paidBy,
-              participants: parts.map((p) => ({
-                userId: p.userId,
-                displayName: userMap.get(p.userId) ?? p.userId,
-              })),
-            };
-          })
+              return {
+                ...exp,
+                participants: parts
+                  .filter((p: any) => p && p.userId)
+                  .map((p: any) => ({
+                    userId: p.userId,
+                    displayName:
+                      userMap.get(p.userId) ?? "Unknown",
+                  })),
+              };
+            })
         );
 
         setExpenses(withParticipants);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load expenses");
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Failed to load expenses"
+        );
       } finally {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [currentUser.userId]);
 
-  const grouped = useMemo(
-    () => groupExpenses(expenses),
-    [expenses]
-  );
+  /* =========================
+     Grouping helpers
+     ========================= */
 
-  if (!user) return null;
+  const directGroups = useMemo(() => {
+    const map = new Map<string, ExpenseWithPeople[]>();
+
+    for (const exp of expenses) {
+      if (exp.groupId) continue;
+
+      const key = exp.participants
+        .map((p) => p.displayName)
+        .sort((a, b) => a.localeCompare(b))
+        .join(" + ");
+
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(exp);
+    }
+
+    return map;
+  }, [expenses]);
+
+  const groupExpenseMap = useMemo(() => {
+    const map = new Map<string, ExpenseWithPeople[]>();
+
+    for (const exp of expenses) {
+      if (!exp.groupId) continue;
+      if (!map.has(exp.groupId)) map.set(exp.groupId, []);
+      map.get(exp.groupId)!.push(exp);
+    }
+
+    return map;
+  }, [expenses]);
+
+  /* =========================
+     Settlement rendering
+     ========================= */
+
+  function computeNet(exps: ExpenseWithPeople[]) {
+    const net: Record<string, number> = {};
+
+    for (const exp of exps) {
+      if (!exp.paidBy || exp.participants.length === 0) continue;
+
+      net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
+
+      const per = exp.amount / exp.participants.length;
+
+      for (const p of exp.participants) {
+        net[p.userId] = (net[p.userId] ?? 0) - per;
+      }
+    }
+
+    return net;
+  }
+
+  function buildSettlements(
+    net: Record<string, number>,
+    nameMap: Map<string, string>
+  ) {
+    const owed: [string, number][] = [];
+    const owes: [string, number][] = [];
+
+    for (const [u, amt] of Object.entries(net)) {
+      if (amt > 0.001) owed.push([u, amt]);
+      if (amt < -0.001) owes.push([u, -amt]);
+    }
+
+    const res: string[] = [];
+    let i = 0;
+    let j = 0;
+
+    while (i < owes.length && j < owed.length) {
+      const [dId, debt] = owes[i];
+      const [cId, credit] = owed[j];
+
+      const amt = Math.min(debt, credit);
+
+      res.push(
+        `${nameMap.get(dId)} owes ${nameMap.get(
+          cId
+        )} $${amt.toFixed(2)}`
+      );
+
+      owes[i][1] -= amt;
+      owed[j][1] -= amt;
+
+      if (owes[i][1] <= 0.001) i++;
+      if (owed[j][1] <= 0.001) j++;
+    }
+
+    return res;
+  }
+
+  function renderSettlementsOnly(exps: ExpenseWithPeople[]) {
+    if (exps.length === 0) return null;
+
+    const nameMap = new Map<string, string>();
+    exps.forEach((e) =>
+      e.participants.forEach((p) =>
+        nameMap.set(p.userId, p.displayName)
+      )
+    );
+
+    return buildSettlements(
+      computeNet(exps),
+      nameMap
+    ).map((s, i) => <div key={i}>{s}</div>);
+  }
+
+  function renderExpenseSection(exps: ExpenseWithPeople[]) {
+    if (exps.length === 0) return <p>No expenses yet.</p>;
+
+    return (
+      <ul className={styles.list}>
+        {exps.map((expense) => {
+          const payerName =
+            expense.participants.find(
+              (p) => p.userId === expense.paidBy
+            )?.displayName ?? "Unknown";
+
+          return (
+            <li key={expense.id}>
+              <div style={{ fontSize: "0.85rem", color: "#666" }}>
+                Paid by: {payerName}
+              </div>
+
+              <ExpenseDetailCard
+                expense={expense}
+                currentUserId={currentUser.userId}
+                onDeleted={() =>
+                  setExpenses((prev) =>
+                    prev.filter((e) => e.id !== expense.id)
+                  )
+                }
+              />
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  /* =========================
+     Render
+     ========================= */
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
         <h1 className={styles.heading}>Expenses</h1>
+
         <div className={styles.actions}>
           <Link to="/expense/new" className={styles.button}>
             Add expense
+          </Link>
+          <Link
+            to="/group/new"
+            className={`${styles.button} ${styles.buttonSecondary}`}
+          >
+            Create group
           </Link>
           <Link
             to="/auth"
@@ -197,7 +254,9 @@ export default function ExpenseListPage() {
         </div>
       </header>
 
-      <p className={styles.userInfo}>Signed in as {user.displayName}</p>
+      <p className={styles.userInfo}>
+        Signed in as {currentUser.displayName}
+      </p>
 
       {loading && <p>Loading…</p>}
       {error && <p className={styles.error}>{error}</p>}
@@ -207,104 +266,102 @@ export default function ExpenseListPage() {
           <div className={styles.sidebar}>
             <div
               className={`${styles.sidebarItem} ${
-                selectedView === "__summary__"
+                selected === "__summary__"
                   ? styles.sidebarItemActive
                   : ""
               }`}
-              onClick={() => setSelectedView("__summary__")}
+              onClick={() => setSelected("__summary__")}
             >
               Summary
             </div>
 
-            {grouped.map((group) => (
+            <div className={styles.sidebarSection}>Direct</div>
+
+            {[...directGroups.keys()].map((key) => (
               <div
-                key={group.key}
+                key={key}
                 className={`${styles.sidebarItem} ${
-                  selectedView === group.key
+                  selected === key
                     ? styles.sidebarItemActive
                     : ""
                 }`}
-                onClick={() => setSelectedView(group.key)}
+                onClick={() => setSelected(key)}
               >
-                {group.key}
+                {key}
+              </div>
+            ))}
+
+            <div className={styles.sidebarSection}>Groups</div>
+
+            {groups.map((g) => (
+              <div
+                key={g.id}
+                className={`${styles.sidebarItem} ${
+                  selected === g.id
+                    ? styles.sidebarItemActive
+                    : ""
+                }`}
+                onClick={() => setSelected(g.id)}
+              >
+                {g.name}
               </div>
             ))}
           </div>
 
           <div className={styles.content}>
-            {selectedView === "__summary__" ? (
-              <div>
+            {selected === "__summary__" && (
+              <>
                 <h3>Summary</h3>
 
-                {grouped.map((group) => {
-                  const settlements = buildSettlements(
-                    computeNet(group),
-                    group
-                  );
+                <h4>Direct</h4>
+                {[...directGroups.entries()].map(
+                  ([key, exps]) => (
+                    <div key={key}>
+                      <strong>{key}</strong>
+                      {renderSettlementsOnly(exps)}
+                    </div>
+                  )
+                )}
+
+                <h4>Groups</h4>
+                {groups.map((g) => {
+                  const exps =
+                    groupExpenseMap.get(g.id) ?? [];
+                  if (exps.length === 0) return null;
 
                   return (
-                    <div key={group.key} style={{ marginBottom: "1rem" }}>
-                      <strong>{group.key}</strong>
-                      {settlements.length === 0 ? (
-                        <div>All settled up 🎉</div>
-                      ) : (
-                        settlements.map((s, i) => (
-                          <div key={i}>{s}</div>
-                        ))
-                      )}
+                    <div key={g.id}>
+                      <strong>{g.name}</strong>
+                      {renderSettlementsOnly(exps)}
                     </div>
                   );
                 })}
-              </div>
-            ) : (
-              grouped
-                .filter((g) => g.key === selectedView)
-                .map((group) => (
-                  <div key={group.key} className={styles.group}>
-                    <h3 className={styles.groupTitle}>{group.key}</h3>
+              </>
+            )}
 
-                    {buildSettlements(
-                      computeNet(group),
-                      group
-                    ).map((s, i) => (
-                      <div key={i}>{s}</div>
-                    ))}
-
-                    <ul className={styles.list}>
-                      {group.expenses.map((expense) => {
-                        const payerName = expense.participants.find(
-                          (p) => p.userId === expense.paidBy
-                        )?.displayName;
-
-                        return (
-                          <li key={expense.id}>
-                            <div
-                              style={{
-                                fontSize: "0.85rem",
-                                marginBottom: "4px",
-                                color: "#666",
-                              }}
-                            >
-                              Paid by: {payerName ?? "Unknown"}
-                            </div>
-
-                            <ExpenseDetailCard
-                              expense={expense}
-                              currentUserId={user.userId}
-                              onDeleted={() =>
-                                setExpenses((prev) =>
-                                  prev.filter(
-                                    (e) => e.id !== expense.id
-                                  )
-                                )
-                              }
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
+            {[...directGroups.entries()].map(
+              ([key, exps]) =>
+                selected === key ? (
+                  <div key={key}>
+                    <h3>{key}</h3>
+                    {renderSettlementsOnly(exps)}
+                    {renderExpenseSection(exps)}
                   </div>
-                ))
+                ) : null
+            )}
+
+            {groups.map((g) =>
+              selected === g.id ? (
+                <div key={g.id}>
+                  <h3>{g.name}</h3>
+                  {renderSettlementsOnly(
+                    groupExpenseMap.get(g.id) ?? []
+                  )}
+                  {renderExpenseSection(
+                    groupExpenseMap.get(g.id) ?? []
+                  )}
+                </div>
+              ) : null
             )}
           </div>
         </div>

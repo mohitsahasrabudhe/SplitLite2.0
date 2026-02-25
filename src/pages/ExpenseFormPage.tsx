@@ -7,204 +7,198 @@ import {
   setExpenseParticipants,
   listAllUsers,
   listParticipantsForExpense,
+  listMyGroups,
+  listGroupMembers,
 } from "../api/expenses";
-import type { UserProfileType } from "../api/expenses";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../amplify/data/resource";
+import type { UserProfileType, GroupType } from "../api/expenses";
 import styles from "./ExpenseFormPage.module.css";
 
-const client = generateClient<Schema>();
+type SplitMethod = "EQUAL" | "BY_SHARES" | "BY_PERCENT" | "FULL";
 
 export default function ExpenseFormPage() {
   const { user } = useAuth();
+  if (!user) return null;
+
+  const myId = user.userId;
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
-  const [groupName, setGroupName] = useState(""); // ✅ NEW
-  const [splitMethod, setSplitMethod] = useState<"EQUAL" | "BY_SHARES">("EQUAL");
+  const [groupId, setGroupId] = useState<string | "">("");
+  const [groups, setGroups] = useState<GroupType[]>([]);
+
+  const [splitMethod, setSplitMethod] = useState<SplitMethod>("EQUAL");
+  const [shares, setShares] = useState<Record<string, number>>({});
+  const [percents, setPercents] = useState<Record<string, number>>({});
+  const [fullOwer, setFullOwer] = useState("");
 
   const [users, setUsers] = useState<UserProfileType[]>([]);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const resolveUserId = (u: UserProfileType) =>
-    (u as any).owner ?? (u as any).id;
+  const resolveEmail = (u: any) => (u.email ?? "").toLowerCase();
 
-  const resolveName = (u: UserProfileType) =>
-    u.displayName ?? resolveUserId(u);
+  /* ========================= INITIAL LOAD ========================= */
 
   useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
+    (async () => {
+      try {
+        const [allUsers, myGroups] = await Promise.all([
+          listAllUsers(),
+          listMyGroups(myId),
+        ]);
+
+        setUsers(allUsers.filter(u => u?.id));
+        setGroups(myGroups.filter(g => g?.id));
+
+        if (!isEdit) {
+          setSelectedIds(new Set([myId]));
+        }
+      } catch {
+        setError("Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [myId, isEdit]);
+
+  /* ========================= EDIT MODE LOAD ========================= */
+
+  useEffect(() => {
+    if (!isEdit || !id) return;
 
     (async () => {
       try {
-        const allUsers = await listAllUsers();
-        if (cancelled) return;
-        setUsers(allUsers);
+        const participants = await listParticipantsForExpense(id);
 
-        const myId = user.userId;
-        setSelectedIds(new Set([myId]));
+        const ids = participants
+          .filter(p => p?.userId)
+          .map(p => p.userId);
 
-        if (isEdit && id) {
-          const { data: exp } = await client.models.Expense.get(
-            { id },
-            {
-              selectionSet: [
-                "id",
-                "title",
-                "amount",
-                "splitMethod",
-                "totalShares",
-                "groupName", // ✅ NEW
-                "paidBy",
-                "createdAt",
-              ],
-            }
-          );
+        setSelectedIds(new Set(ids));
 
-          const participants = await listParticipantsForExpense(id);
-
-          if (!cancelled && exp) {
-            const d = (exp as any).data ?? exp;
-
-            setTitle(d.title ?? "");
-            setAmount(String(d.amount ?? ""));
-            setGroupName(d.groupName ?? ""); // ✅ NEW
-            setSplitMethod((d.splitMethod ?? "EQUAL") as any);
-
-            const ids = new Set(participants.map((p) => p.userId));
-            ids.add(myId);
-            setSelectedIds(ids);
-
-            const counts: Record<string, number> = {};
-            participants.forEach(
-              (p) => (counts[p.userId] = p.shareCount ?? 1)
-            );
-            setShareCounts(counts);
+        const shareMap: Record<string, number> = {};
+        participants.forEach(p => {
+          if (p.userId && typeof p.shareCount === "number") {
+            shareMap[p.userId] = p.shareCount;
           }
-        }
+        });
+
+        setShares(shareMap);
+
+        // Infer split type from stored splitMethod
+        // (already saved correctly)
+        // We assume updateExpense saved correct splitMethod
       } catch {
-        if (!cancelled) setError("Failed to load data");
-      } finally {
-        if (!cancelled) setLoading(false);
+        setError("Failed to load expense data");
       }
     })();
+  }, [isEdit, id]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [user, isEdit, id]);
+  /* ========================= GROUP AUTO ADD ========================= */
 
-  if (!user) return null;
-  const myId = user.userId;
+  useEffect(() => {
+    if (!groupId) return;
+
+    (async () => {
+      try {
+        const members = await listGroupMembers(groupId);
+        setSelectedIds(
+          new Set([myId, ...members.map(m => m.userId).filter(Boolean)])
+        );
+      } catch {
+        console.warn("Failed to load group members");
+      }
+    })();
+  }, [groupId, myId]);
+
+  /* ========================= SEARCH ========================= */
 
   const results = query
-    ? users.filter((u) => {
-        const name = resolveName(u).toLowerCase();
-        return (
-          name.includes(query.toLowerCase()) &&
-          !selectedIds.has(resolveUserId(u))
-        );
-      })
+    ? users.filter(
+        u =>
+          resolveEmail(u).includes(query.toLowerCase()) &&
+          !selectedIds.has(u.id)
+      )
     : [];
 
   const addUser = (id: string) => {
-    setSelectedIds((prev) => new Set([...prev, id]));
+    setSelectedIds(p => new Set([...p, id]));
     setQuery("");
   };
 
   const removeUser = (id: string) => {
     if (id === myId) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
+    setSelectedIds(p => {
+      const n = new Set(p);
+      n.delete(id);
+      return n;
     });
   };
 
-  const setShare = (userId: string, value: number) => {
-    setShareCounts((prev) => ({ ...prev, [userId]: Math.max(1, value) }));
-  };
-
-  const titleValid = /^[A-Za-z ]+$/.test(title.trim());
-  const amountValid = /^\d+(\.\d{1,2})?$/.test(amount);
+  /* ========================= SUBMIT ========================= */
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!titleValid) {
-      setError("Title must contain letters only");
-      return;
-    }
-
-    if (!amountValid) {
-      setError("Enter a valid amount");
-      return;
-    }
-
-    if (selectedIds.size < 2) {
-      setError("Select at least two participants");
-      return;
-    }
-
-    if (!selectedIds.has(myId)) {
-      setError("You must be included");
-      return;
-    }
-
-    const participantUserIds = [...selectedIds];
+    const ids = [...selectedIds];
     const amt = parseFloat(amount);
+
+    if (ids.length < 2) return setError("Select at least two participants");
+    if (!title.trim() || isNaN(amt)) return setError("Enter valid amount");
+
+    let counts: number[] = [];
+
+    if (splitMethod === "EQUAL") {
+      counts = ids.map(() => 1);
+    }
+
+    if (splitMethod === "BY_SHARES") {
+      for (const id of ids)
+        if (!shares[id]) return setError("Enter all shares");
+      counts = ids.map(id => shares[id]);
+    }
+
+    if (splitMethod === "BY_PERCENT") {
+      const total = ids.reduce((s, id) => s + (percents[id] || 0), 0);
+      if (Math.round(total) !== 100)
+        return setError("Percent must total 100%");
+      counts = ids.map(id => percents[id]);
+    }
+
+    if (splitMethod === "FULL") {
+      if (!fullOwer) return setError("Select who owes full amount");
+      counts = ids.map(id => (id === fullOwer ? 100 : 0));
+    }
 
     setSaving(true);
     setError(null);
 
     try {
-      const totalShares =
-        splitMethod === "BY_SHARES"
-          ? participantUserIds.reduce(
-              (s, uid) => s + (shareCounts[uid] ?? 1),
-              0
-            )
-          : undefined;
-
       if (isEdit && id) {
         await updateExpense(id, {
           title: title.trim(),
           amount: amt,
           splitMethod,
-          totalShares,
-          groupName: groupName.trim() || undefined, // ✅ NEW
+          groupId: groupId || null,
         });
 
-        await setExpenseParticipants(
-          id,
-          participantUserIds,
-          splitMethod === "BY_SHARES"
-            ? participantUserIds.map((uid) => shareCounts[uid] ?? 1)
-            : undefined
-        );
+        await setExpenseParticipants(id, ids, counts);
       } else {
         await createExpense({
           title: title.trim(),
           amount: amt,
           splitMethod,
-          totalShares,
-          groupName: groupName.trim() || undefined, // ✅ NEW
           paidBy: myId,
-          participantUserIds,
-          participantShareCounts:
-            splitMethod === "BY_SHARES"
-              ? participantUserIds.map((uid) => shareCounts[uid] ?? 1)
-              : undefined,
+          groupId: groupId || undefined,
+          participantUserIds: ids,
+          participantShareCounts: counts,
         });
       }
 
@@ -216,126 +210,126 @@ export default function ExpenseFormPage() {
     }
   };
 
-  if (loading) return <p className={styles.loading}>Loading…</p>;
+  if (loading) return <p>Loading…</p>;
+
+  /* ========================= UI ========================= */
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.heading}>
-        {isEdit ? "Edit expense" : "New expense"}
-      </h1>
+      <h1>{isEdit ? "Edit expense" : "New expense"}</h1>
 
       {error && <p className={styles.error}>{error}</p>}
 
       <form onSubmit={handleSubmit}>
-        <div className={styles.formGroup}>
-          <label>Title</label>
-          <input
-            className={styles.input}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            placeholder="Dinner"
-          />
-        </div>
+        {/* Title */}
+        <input
+          className={styles.input}
+          placeholder="Title"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+        />
 
-        <div className={styles.formGroup}>
-          <label>Group (optional)</label>
-          <input
-            className={styles.input}
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            placeholder="Miami Trip"
-          />
-        </div>
+        {/* Group dropdown restored */}
+        <select
+          className={styles.select}
+          value={groupId}
+          onChange={e => setGroupId(e.target.value)}
+        >
+          <option value="">No group</option>
+          {groups.map(g => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
 
-        <div className={styles.formGroup}>
-          <label>Amount</label>
-          <input
-            className={styles.input}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-            placeholder="25.00"
-          />
-        </div>
+        {/* Participants */}
+        <input
+          className={styles.input}
+          placeholder="Search by email…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
 
-        <div className={styles.formGroup}>
-          <label>Split method</label>
-          <select
-            className={styles.select}
-            value={splitMethod}
-            onChange={(e) => setSplitMethod(e.target.value as any)}
-          >
-            <option value="EQUAL">Equal</option>
-            <option value="BY_SHARES">By shares</option>
-          </select>
-        </div>
-
-        <div className={styles.formGroup}>
-          <label>Participants</label>
-
-          <input
-            className={styles.input}
-            placeholder="Search people…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-
-          {results.map((u) => {
-            const uid = resolveUserId(u);
-            return (
-              <div
-                key={uid}
-                className={styles.searchResult}
-                onClick={() => addUser(uid)}
-              >
-                {resolveName(u)}
-              </div>
-            );
-          })}
-
-          <div className={styles.selectedList}>
-            {[...selectedIds].map((uid) => {
-              const u = users.find((x) => resolveUserId(x) === uid);
-              return (
-                <div key={uid} className={styles.chip}>
-                  {u ? resolveName(u) : uid}
-
-                  {uid !== myId && (
-                    <button
-                      type="button"
-                      onClick={() => removeUser(uid)}
-                    >
-                      ×
-                    </button>
-                  )}
-
-                  {splitMethod === "BY_SHARES" && (
-                    <input
-                      type="number"
-                      min={1}
-                      className={styles.shareInput}
-                      value={shareCounts[uid] ?? 1}
-                      onChange={(e) =>
-                        setShare(uid, parseInt(e.target.value, 10) || 1)
-                      }
-                    />
-                  )}
-                </div>
-              );
-            })}
+        {results.map(u => (
+          <div key={u.id} onClick={() => addUser(u.id)}>
+            {u.displayName} — {resolveEmail(u)}
           </div>
-        </div>
+        ))}
 
-        <div className={styles.actions}>
-          <button className={styles.button} disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Update" : "Create"}
-          </button>
+        {[...selectedIds].map(uid => (
+          <div key={uid}>
+            {users.find(u => u.id === uid)?.displayName}
+            {uid !== myId && (
+              <button type="button" onClick={() => removeUser(uid)}>
+                ×
+              </button>
+            )}
+          </div>
+        ))}
 
-          <Link to="/" className={styles.buttonSecondary}>
-            Cancel
-          </Link>
-        </div>
+        {/* Amount */}
+        <input
+          className={styles.input}
+          placeholder="Amount"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+        />
+
+        {/* Split type */}
+        <select
+          value={splitMethod}
+          onChange={e => setSplitMethod(e.target.value as SplitMethod)}
+        >
+          <option value="EQUAL">Equal</option>
+          <option value="BY_SHARES">By shares</option>
+          <option value="BY_PERCENT">By percent</option>
+          <option value="FULL">One person owes all</option>
+        </select>
+
+        {/* Dynamic split inputs */}
+        {splitMethod === "BY_SHARES" &&
+          [...selectedIds].map(id => (
+            <input
+              key={id}
+              type="number"
+              placeholder={`Shares for ${users.find(u => u.id === id)?.displayName}`}
+              value={shares[id] || ""}
+              onChange={e =>
+                setShares({ ...shares, [id]: Number(e.target.value) })
+              }
+            />
+          ))}
+
+        {splitMethod === "BY_PERCENT" &&
+          [...selectedIds].map(id => (
+            <input
+              key={id}
+              type="number"
+              placeholder={`% for ${users.find(u => u.id === id)?.displayName}`}
+              value={percents[id] || ""}
+              onChange={e =>
+                setPercents({ ...percents, [id]: Number(e.target.value) })
+              }
+            />
+          ))}
+
+        {splitMethod === "FULL" && (
+          <select value={fullOwer} onChange={e => setFullOwer(e.target.value)}>
+            <option value="">Who owes?</option>
+            {[...selectedIds].map(id => (
+              <option key={id} value={id}>
+                {users.find(u => u.id === id)?.displayName}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <button disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+
+        <Link to="/">Cancel</Link>
       </form>
     </div>
   );
