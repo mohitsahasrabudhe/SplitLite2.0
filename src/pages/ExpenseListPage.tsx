@@ -9,14 +9,17 @@ import {
 } from "../api/expenses";
 import type {
   FlatExpense,
-  UserProfileType,
   GroupType,
 } from "../api/expenses";
 import ExpenseDetailCard from "../components/ExpenseDetailCard";
 import styles from "./ExpenseListPage.module.css";
 
 type ExpenseWithPeople = FlatExpense & {
-  participants: { userId: string; displayName: string }[];
+  participants: {
+    userId: string;
+    displayName: string;
+    shareCount: number;
+  }[];
 };
 
 export default function ExpenseListPage() {
@@ -65,6 +68,7 @@ export default function ExpenseListPage() {
                     userId: p.userId,
                     displayName:
                       userMap.get(p.userId) ?? "Unknown",
+                    shareCount: p.shareCount ?? 1,
                   })),
               };
             })
@@ -118,21 +122,34 @@ export default function ExpenseListPage() {
   }, [expenses]);
 
   /* =========================
-     Settlement rendering
+     Correct settlement engine
      ========================= */
 
   function computeNet(exps: ExpenseWithPeople[]) {
     const net: Record<string, number> = {};
 
     for (const exp of exps) {
-      if (!exp.paidBy || exp.participants.length === 0) continue;
+      if (!exp.paidBy || exp.participants.length === 0)
+        continue;
 
-      net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
+      net[exp.paidBy] =
+        (net[exp.paidBy] ?? 0) + exp.amount;
 
-      const per = exp.amount / exp.participants.length;
+      const totalWeight = exp.participants.reduce(
+        (s, p) => s + (p.shareCount ?? 1),
+        0
+      );
 
       for (const p of exp.participants) {
-        net[p.userId] = (net[p.userId] ?? 0) - per;
+        const weight = p.shareCount ?? 1;
+
+        const owed =
+          totalWeight > 0
+            ? (weight / totalWeight) * exp.amount
+            : 0;
+
+        net[p.userId] =
+          (net[p.userId] ?? 0) - owed;
       }
     }
 

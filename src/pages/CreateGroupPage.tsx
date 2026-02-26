@@ -32,19 +32,29 @@ export default function CreateGroupPage() {
     })();
   }, []);
 
-  const filteredUsers = allUsers.filter(
-    (u) =>
-      u.id !== currentUserId &&
-      (u as any).email
-        ?.toLowerCase()
-        .includes(search.toLowerCase())
-  );
+  /* =========================
+     Search Results (click to add)
+     ========================= */
 
-  function toggleUser(id: string) {
+  const searchResults = search
+    ? allUsers.filter(
+        (u) =>
+          u.id !== currentUserId &&
+          !selectedUserIds.includes(u.id) &&
+          (u as any).email
+            ?.toLowerCase()
+            .includes(search.toLowerCase())
+      )
+    : [];
+
+  function addUser(id: string) {
+    setSelectedUserIds((prev) => [...prev, id]);
+    setSearch("");
+  }
+
+  function removeUser(id: string) {
     setSelectedUserIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((u) => u !== id)
-        : [...prev, id]
+      prev.filter((u) => u !== id)
     );
   }
 
@@ -73,6 +83,7 @@ export default function CreateGroupPage() {
       <h2>Create Group</h2>
 
       <form onSubmit={handleSubmit}>
+        {/* Group Name */}
         <div style={{ marginBottom: "16px" }}>
           <label>Group Name</label>
           <input
@@ -83,8 +94,10 @@ export default function CreateGroupPage() {
           />
         </div>
 
+        {/* Search */}
         <div style={{ marginBottom: "16px" }}>
           <label>Add Members</label>
+
           <input
             type="text"
             placeholder="Search by email..."
@@ -92,29 +105,74 @@ export default function CreateGroupPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          <div style={{ marginTop: "8px" }}>
-            {filteredUsers.map((u) => {
-              const isSelected = selectedUserIds.includes(u.id);
-
-              return (
-                <div key={u.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleUser(u.id)}
-                    />
-                    {u.displayName} — {(u as any).email}
-                  </label>
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <div style={{ marginTop: "8px" }}>
+              {searchResults.map((u) => (
+                <div
+                  key={u.id}
+                  style={{
+                    padding: "6px 0",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => addUser(u.id)}
+                >
+                  {u.displayName} — {(u as any).email}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+
+          {/* Selected Members */}
+          {selectedUserIds.length > 0 && (
+            <div style={{ marginTop: "12px" }}>
+              <strong>Selected:</strong>
+
+              {selectedUserIds.map((id) => {
+                const u = allUsers.find(
+                  (user) => user.id === id
+                );
+
+                return (
+                  <div
+                    key={id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginTop: "6px",
+                    }}
+                  >
+                    <span>
+                      {u?.displayName} — {(u as any)?.email}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => removeUser(id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Creating..." : "Create Group"}
-        </button>
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: "12px" }}>
+          <button type="submit" disabled={loading}>
+            {loading ? "Creating..." : "Create Group"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   );
