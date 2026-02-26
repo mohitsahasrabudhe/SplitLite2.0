@@ -684,7 +684,7 @@ export default function DashboardPage() {
             <Link to="/group/new" className="btn btn-ghost">
               <span className="btn-icon-only">👥</span><span className="btn-label">New group</span>
             </Link>
-            <Link to="/auth" className="btn btn-ghost">
+            <Link to="/auth?account=1 " className="btn btn-ghost">
               <span className="btn-icon-only">👤</span><span className="btn-label">Account</span>
             </Link>
           </div>

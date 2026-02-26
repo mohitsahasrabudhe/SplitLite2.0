@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   signIn, signUp, confirmSignUp, resetPassword,
   confirmResetPassword, deleteUser,
@@ -17,34 +17,48 @@ type Step = "signIn" | "signUp" | "confirm" | "reset" | "resetConfirm";
 function friendlyError(msg: string) {
   const m = msg.toLowerCase();
   if (m.includes("incorrect") || m.includes("not authorized")) return "Incorrect email or password.";
-  if (m.includes("password")) return "Password must be at least 8 characters.";
+  if (m.includes("password")) return "Password doesn't meet the requirements.";
   if (m.includes("exists")) return "An account with this email already exists.";
   if (m.includes("code")) return "Invalid confirmation code.";
   return msg;
 }
 
-function getPasswordStrength(pw: string): { score: number; label: string; color: string; hints: string[] } {
-  const hints: string[] = [];
-  if (pw.length < 8) hints.push(`${8 - pw.length} more character${8 - pw.length !== 1 ? "s" : ""} needed`);
-  if (pw.length === 0) return { score: 0, label: "", color: "", hints: [] };
+// ── Password helpers ──────────────────────────────────────────────────────────
+type PwReqs = {
+  minLength:  boolean;
+  hasUpper:   boolean;
+  hasLower:   boolean;
+  hasNumber:  boolean;
+  hasSpecial: boolean;
+};
 
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (pw.length >= 12) score++;
-  if (/[A-Z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
+function checkPwReqs(pw: string): PwReqs {
+  return {
+    minLength:  pw.length >= 8,
+    hasUpper:   /[A-Z]/.test(pw),
+    hasLower:   /[a-z]/.test(pw),
+    hasNumber:  /[0-9]/.test(pw),
+    hasSpecial: /[^A-Za-z0-9]/.test(pw),
+  };
+}
 
+function allReqsMet(pw: string) {
+  const r = checkPwReqs(pw);
+  return r.minLength && r.hasUpper && r.hasLower && r.hasNumber && r.hasSpecial;
+}
+
+function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
+  if (!pw) return { score: 0, label: "", color: "" };
+  const r = checkPwReqs(pw);
+  const score = [r.minLength, r.hasUpper, r.hasLower, r.hasNumber, r.hasSpecial].filter(Boolean).length;
   const levels = [
-    { score: 1, label: "Too short", color: "#ff6b6b" },
-    { score: 2, label: "Weak", color: "#ff9f43" },
-    { score: 3, label: "Fair", color: "#ffd43b" },
-    { score: 4, label: "Good", color: "#3ecfb2" },
-    { score: 5, label: "Strong 💪", color: "#3ecfb2" },
+    { label: "Too weak",  color: "#ff6b6b" },
+    { label: "Weak",      color: "#ff9f43" },
+    { label: "Fair",      color: "#ffd43b" },
+    { label: "Good",      color: "#74c69d" },
+    { label: "Strong 💪", color: "#3ecfb2" },
   ];
-
-  const level = levels[Math.min(score, 5) - 1] ?? levels[0];
-  return { score, label: level.label, color: level.color, hints };
+  return { score, ...levels[score - 1] };
 }
 
 function getGreeting(name: string) {
@@ -55,6 +69,7 @@ function getGreeting(name: string) {
   return `Evening, ${first} 🌙`;
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -69,7 +84,7 @@ const css = `
   }
   body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--text); }
 
-  /* ── shared auth styles ── */
+  /* ── shared auth ── */
   .auth-root { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; }
   .auth-brand { font-size: 1.3rem; font-weight: 600; letter-spacing: -.3px; margin-bottom: 32px; }
   .auth-brand .a { color: var(--accent); }
@@ -95,76 +110,51 @@ const css = `
   .auth-link-row button { background: none; border: none; cursor: pointer; color: var(--accent); font-family: inherit; font-size: inherit; font-weight: 500; padding: 0; }
   .auth-text-btn-sm { background: none; border: none; cursor: pointer; color: var(--muted); font-family: inherit; font-size: .8rem; padding: 0; text-decoration: underline; display: block; margin: 12px auto 0; }
 
-  /* password strength */
+  /* ── password strength + checklist ── */
   .pw-wrapper { position: relative; }
   .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--muted); font-size: .8rem; font-family: inherit; padding: 4px; line-height: 1; transition: color .12s; }
   .pw-toggle:hover { color: var(--text); }
-  .pw-strength { margin-top: 8px; }
-  .pw-bars { display: flex; gap: 4px; margin-bottom: 5px; }
-  .pw-bar { flex: 1; height: 3px; border-radius: 99px; background: var(--border); transition: background .25s ease; }
-  .pw-meta { display: flex; align-items: center; justify-content: space-between; }
-  .pw-label { font-size: .75rem; font-weight: 500; transition: color .25s; }
-  .pw-hint { font-size: .73rem; color: var(--muted); }
+  .pw-strength { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .pw-bars { display: flex; gap: 4px; }
+  .pw-bar { flex: 1; height: 3px; border-radius: 99px; background: var(--border); transition: background .3s ease; }
+  .pw-label { font-size: .74rem; font-weight: 600; display: block; margin-top: 4px; transition: color .25s; }
+  .pw-checklist {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
+  }
+  .pw-req { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--muted); transition: color .2s; }
+  .pw-req.met { color: var(--text); }
+  .pw-req-chip {
+    width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .62rem; font-weight: 800; color: transparent;
+    transition: background .2s, border-color .2s, color .15s, transform .2s;
+  }
+  .pw-req.met .pw-req-chip {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    transform: scale(1.1);
+  }
 
-  /* ═══════════════════════════
-     WELCOME SCREEN
-  ═══════════════════════════ */
+  /* ═════════════════════ WELCOME SCREEN ═════════════════════ */
   .wp-root { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 0 16px 48px; }
-
-  .wp-hero {
-    width: 100%; max-width: 520px;
-    background: var(--text);
-    border-radius: 0 0 32px 32px;
-    padding: 40px 28px 48px;
-    margin-bottom: -32px;
-    position: relative; overflow: hidden;
-  }
-  .wp-hero::before {
-    content: ''; position: absolute;
-    width: 260px; height: 260px; border-radius: 50%;
-    border: 50px solid rgba(62,207,178,.1);
-    top: -80px; right: -80px; pointer-events: none;
-  }
-  .wp-hero::after {
-    content: ''; position: absolute;
-    width: 160px; height: 160px; border-radius: 50%;
-    border: 35px solid rgba(62,207,178,.07);
-    bottom: -50px; left: 10px; pointer-events: none;
-  }
+  .wp-hero { width: 100%; max-width: 520px; background: var(--text); border-radius: 0 0 32px 32px; padding: 40px 28px 48px; margin-bottom: -32px; position: relative; overflow: hidden; }
+  .wp-hero::before { content: ''; position: absolute; width: 260px; height: 260px; border-radius: 50%; border: 50px solid rgba(62,207,178,.1); top: -80px; right: -80px; pointer-events: none; }
+  .wp-hero::after { content: ''; position: absolute; width: 160px; height: 160px; border-radius: 50%; border: 35px solid rgba(62,207,178,.07); bottom: -50px; left: 10px; pointer-events: none; }
   .wp-hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
   .wp-brand { font-size: .9rem; font-weight: 600; color: rgba(255,255,255,.4); letter-spacing: .03em; }
   .wp-brand span { color: var(--accent); }
-  .wp-avatar {
-    width: 50px; height: 50px; border-radius: 50%;
-    background: var(--accent); color: #1a1a2e;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; font-weight: 700;
-    box-shadow: 0 0 0 3px rgba(62,207,178,.25);
-    animation: popIn .45s cubic-bezier(.34,1.56,.64,1) both;
-  }
+  .wp-avatar { width: 50px; height: 50px; border-radius: 50%; background: var(--accent); color: #1a1a2e; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 700; box-shadow: 0 0 0 3px rgba(62,207,178,.25); animation: popIn .45s cubic-bezier(.34,1.56,.64,1) both; }
   @keyframes popIn { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .wp-greeting { font-size: 1.6rem; font-weight: 600; color: #fff; letter-spacing: -.5px; line-height: 1.2; animation: slideUp .4s .1s ease both; }
   .wp-email { font-size: .8rem; color: rgba(255,255,255,.4); margin-top: 6px; font-family: 'DM Mono', monospace; animation: slideUp .4s .15s ease both; }
   @keyframes slideUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
   .wp-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 28px; width: 100%; max-width: 520px; position: relative; z-index: 1; animation: slideUp .4s .2s ease both; }
-
-  /* big CTA */
-  .wp-cta {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 22px;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-    border-radius: 14px; text-decoration: none;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 20px rgba(62,207,178,.3);
-    transition: transform .15s, box-shadow .15s;
-  }
+  .wp-cta { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-radius: 14px; text-decoration: none; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(62,207,178,.3); transition: transform .15s, box-shadow .15s; }
   .wp-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(62,207,178,.4); }
   .wp-cta-label { font-size: .72rem; font-weight: 600; color: rgba(255,255,255,.75); letter-spacing: .07em; text-transform: uppercase; margin-bottom: 3px; }
   .wp-cta-text { font-size: 1.05rem; font-weight: 600; color: #fff; }
   .wp-cta-emoji { font-size: 1.6rem; }
-
-  /* stats */
   .wp-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
   .wp-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 12px; display: flex; flex-direction: column; gap: 3px; animation: slideUp .4s ease both; }
   .wp-stat:nth-child(1) { animation-delay: .25s; }
@@ -175,10 +165,7 @@ const css = `
   .wp-stat-value.red { color: var(--red); }
   .wp-stat-value.neutral { color: var(--text); }
   .wp-stat-label { font-size: .72rem; color: var(--muted); font-weight: 500; }
-
   .wp-rule { height: 1px; background: var(--border); margin: 4px 0 16px; }
-
-  /* secondary actions */
   .wp-secondary { display: flex; flex-direction: column; gap: 8px; }
   .wp-action-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; background: transparent; width: 100%; font-family: inherit; text-decoration: none; transition: background .12s; }
   .wp-action-row:hover { background: var(--bg); }
@@ -189,8 +176,6 @@ const css = `
   .wp-action-name { font-size: .88rem; font-weight: 500; color: var(--text); }
   .wp-action-sub { font-size: .74rem; color: var(--muted); }
   .wp-action-chevron { color: var(--muted); font-size: 1rem; }
-
-  /* delete confirm */
   .wp-danger-confirm { background: var(--red-bg); border: 1px solid #ffd0d0; border-radius: 12px; padding: 16px; margin-top: 4px; }
   .wp-danger-msg { font-size: .88rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .wp-danger-sub { font-size: .78rem; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
@@ -198,8 +183,6 @@ const css = `
   .wp-danger-cancel { flex: 1; padding: 9px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); font-family: inherit; font-size: .83rem; font-weight: 500; cursor: pointer; color: var(--text); }
   .wp-danger-go { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--red); color: #fff; font-family: inherit; font-size: .83rem; font-weight: 500; cursor: pointer; }
   .wp-danger-go:disabled { opacity: .6; }
-
-  /* loading shimmer */
   .wp-stats-loading { display: flex; gap: 10px; margin-bottom: 20px; }
   .wp-shimmer { flex: 1; height: 70px; border-radius: 12px; background: linear-gradient(90deg, var(--border) 25%, #f0f0f3 50%, var(--border) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -210,15 +193,27 @@ const css = `
     .wp-greeting { font-size: 1.35rem; }
     .wp-stat-value { font-size: 1.1rem; }
     .wp-cta { padding: 16px 18px; }
+    .pw-checklist { grid-template-columns: 1fr; }
   }
 `;
 
-/* ── Password field with strength meter ── */
+// ── Password checklist config ─────────────────────────────────────────────────
+const PW_CHECKLIST: { key: keyof PwReqs; label: string }[] = [
+  { key: "minLength",  label: "8+ characters"    },
+  { key: "hasUpper",   label: "Uppercase (A–Z)"  },
+  { key: "hasLower",   label: "Lowercase (a–z)"  },
+  { key: "hasNumber",  label: "Number (0–9)"     },
+  { key: "hasSpecial", label: "Special (!@#…)"   },
+];
+
+// ── PasswordField ─────────────────────────────────────────────────────────────
 function PasswordField({
-  value, onChange, placeholder = "Min. 8 characters", showStrength = false,
+  value, onChange, placeholder = "Password", showStrength = false,
 }: { value: string; onChange: (v: string) => void; placeholder?: string; showStrength?: boolean }) {
   const [visible, setVisible] = useState(false);
-  const strength = showStrength ? getPasswordStrength(value) : null;
+  const hasInput = value.length > 0;
+  const strength = hasInput ? getPasswordStrength(value) : null;
+  const reqs     = checkPwReqs(value); // always computed so checklist shows from the start
 
   return (
     <div>
@@ -236,16 +231,33 @@ function PasswordField({
           {visible ? "Hide" : "Show"}
         </button>
       </div>
-      {showStrength && value.length > 0 && strength && (
+
+      {showStrength && (
         <div className="pw-strength">
-          <div className="pw-bars">
-            {[0,1,2,3,4].map((i) => (
-              <div key={i} className="pw-bar" style={{ background: i < strength.score ? strength.color : undefined }} />
-            ))}
-          </div>
-          <div className="pw-meta">
-            <span className="pw-label" style={{ color: strength.color }}>{strength.label}</span>
-            {strength.hints[0] && <span className="pw-hint">{strength.hints[0]}</span>}
+          {/* progress bars + label — appear once user starts typing */}
+          {hasInput && strength && (
+            <div>
+              <div className="pw-bars">
+                {[0,1,2,3,4].map(i => (
+                  <div key={i} className="pw-bar"
+                    style={{ background: i < strength.score ? strength.color : undefined }} />
+                ))}
+              </div>
+              <span className="pw-label" style={{ color: strength.color }}>{strength.label}</span>
+            </div>
+          )}
+
+          {/* requirement checklist — always visible so users know upfront */}
+          <div className="pw-checklist">
+            {PW_CHECKLIST.map(r => {
+              const met = reqs[r.key];
+              return (
+                <div key={r.key} className={`pw-req ${met ? "met" : ""}`}>
+                  <div className="pw-req-chip">{met ? "✓" : ""}</div>
+                  {r.label}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -253,7 +265,7 @@ function PasswordField({
   );
 }
 
-/* ── Welcome screen component ── */
+// ── Welcome screen ────────────────────────────────────────────────────────────
 function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
   const [stats, setStats] = useState<{ expenses: number; groups: number; netBalance: number } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -268,18 +280,14 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
           listMyExpenses(user.userId),
           listMyGroups(user.userId),
         ]);
-
         let net = 0;
         for (const exp of expenses.filter((e: any) => e?.id)) {
           const parts = await listParticipantsForExpense(exp.id);
           const totalWeight = parts.reduce((s: number, p: any) => s + (p.shareCount ?? 1), 0);
           if (exp.paidBy === user.userId) net += exp.amount;
           const myPart = parts.find((p: any) => p.userId === user.userId);
-          if (myPart) {
-            net -= totalWeight > 0 ? ((myPart.shareCount ?? 1) / totalWeight) * exp.amount : 0;
-          }
+          if (myPart) net -= totalWeight > 0 ? ((myPart.shareCount ?? 1) / totalWeight) * exp.amount : 0;
         }
-
         setStats({ expenses: expenses.length, groups: groups.length, netBalance: net });
       } catch {
         setStats({ expenses: 0, groups: 0, netBalance: 0 });
@@ -329,9 +337,7 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
                 <div className={`wp-stat-value ${bal > 0.01 ? "green" : bal < -0.01 ? "red" : "neutral"}`}>
                   {bal >= 0 ? "+" : "-"}${Math.abs(bal).toFixed(0)}
                 </div>
-                <div className="wp-stat-label">
-                  {bal > 0.01 ? "Owed to you" : bal < -0.01 ? "You owe" : "All settled"}
-                </div>
+                <div className="wp-stat-label">{bal > 0.01 ? "Owed to you" : bal < -0.01 ? "You owe" : "All settled"}</div>
               </div>
             </div>
           )}
@@ -339,7 +345,10 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
           <div className="wp-rule" />
 
           <div className="wp-secondary">
-            <button className="wp-action-row" onClick={() => signOut()}>
+            <button className="wp-action-row" onClick={async () => {
+    await signOut();
+    window.history.replaceState({}, "", "/auth");
+  }}>
               <div className="wp-action-left">
                 <div className="wp-action-icon gray">🚪</div>
                 <div>
@@ -382,26 +391,30 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
   );
 }
 
-/* ══════════════════════════════
-   MAIN EXPORT
-══════════════════════════════ */
+// ══════════════════════════════
+//   MAIN EXPORT
+// ══════════════════════════════
 export default function AuthPage() {
   const { user, loading, refreshProfile, signOut, completeOnboarding } = useAuth();
-  const [step, setStep] = useState<Step>("signIn");
-  const [email, setEmail] = useState("");
+  const [step, setStep]         = useState<Step>("signIn");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
+  const [code, setCode]         = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [busy, setBusy]         = useState(false);
 
   if (loading) return null;
 
-  const Brand = () => <div className="auth-brand">Split<span className="a">Lite</span> <span className="v">2.0</span></div>;
+  const Brand    = () => <div className="auth-brand">Split<span className="a">Lite</span> <span className="v">2.0</span></div>;
   const ErrorBox = () => error ? <div className="auth-error">{error}</div> : null;
 
-  if (user && user.displayName) return <WelcomeScreen user={user} signOut={signOut} />;
+  // ── authenticated: go to dashboard, unless ?account=1 is set ──
+  const showAccount = new URLSearchParams(window.location.search).get("account") === "1";
+  if (user && user.displayName && !showAccount) return <Navigate to="/" replace />;
+  if (user && user.displayName && showAccount) return <WelcomeScreen user={user} signOut={signOut} />;
 
+  // ── onboarding: set display name ──
   if (user && !user.displayName) return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
@@ -427,6 +440,7 @@ export default function AuthPage() {
     </div></>
   );
 
+  // ── confirm sign-up ──
   if (step === "confirm") return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
@@ -450,6 +464,7 @@ export default function AuthPage() {
     </div></>
   );
 
+  // ── reset password ──
   if (step === "resetConfirm") return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
@@ -467,20 +482,21 @@ export default function AuthPage() {
           </div>
           <div className="auth-field">
             <label className="auth-label">New password</label>
-            <PasswordField value={password} onChange={setPassword} showStrength={true} />
+            <PasswordField value={password} onChange={setPassword} showStrength />
           </div>
-          <button className="auth-btn" disabled={busy || password.length < 8}>{busy ? "Saving…" : "Save password"}</button>
+          <button className="auth-btn" disabled={busy || !allReqsMet(password)}>{busy ? "Saving…" : "Save password"}</button>
         </form>
       </div>
     </div></>
   );
 
+  // ── sign up ──
   if (step === "signUp") return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
       <div className="auth-card">
         <div className="auth-title">Create account</div>
-        <div className="auth-sub">Join Split Lite — it's free.</div>
+        <div className="auth-sub">Join SplitLite — it's free.</div>
         <ErrorBox />
         <form onSubmit={async (e) => {
           e.preventDefault(); setBusy(true); setError(null);
@@ -492,16 +508,16 @@ export default function AuthPage() {
           </div>
           <div className="auth-field">
             <label className="auth-label">Password</label>
-            <PasswordField value={password} onChange={setPassword} showStrength={true} />
+            <PasswordField value={password} onChange={setPassword} showStrength />
           </div>
-          <button className="auth-btn" disabled={busy || password.length < 8}>{busy ? "Creating…" : "Create account"}</button>
+          <button className="auth-btn" disabled={busy || !allReqsMet(password)}>{busy ? "Creating…" : "Create account"}</button>
         </form>
         <div className="auth-link-row">Already have an account? <button onClick={() => setStep("signIn")}>Sign in</button></div>
       </div>
     </div></>
   );
 
-  // sign in (default)
+  // ── sign in (default) ──
   return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
