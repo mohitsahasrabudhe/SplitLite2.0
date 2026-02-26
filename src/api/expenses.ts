@@ -96,6 +96,33 @@ export async function listGroupMembers(
   return (data ?? []) as GroupMemberType[];
 }
 
+export async function addGroupMember(
+  groupId: string,
+  userId: string
+): Promise<GroupMemberType> {
+  const { data, errors } = await client.models.GroupMember.create({
+    groupId,
+    userId,
+  });
+
+  if (errors?.length)
+    throw new Error(errors.map(e => e.message).join(", "));
+  if (!data) throw new Error("Failed to add group member");
+
+  return data as GroupMemberType;
+}
+
+export async function removeGroupMember(
+  groupMemberId: string
+): Promise<void> {
+  const { errors } = await client.models.GroupMember.delete({
+    id: groupMemberId,
+  });
+
+  if (errors?.length)
+    throw new Error(errors.map(e => e.message).join(", "));
+}
+
 /* =========================
    Expenses
    ========================= */

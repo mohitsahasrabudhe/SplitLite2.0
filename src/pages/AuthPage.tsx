@@ -507,7 +507,7 @@ export default function AuthPage() {
     <div className="auth-root"><Brand />
       <div className="auth-card">
         <div className="auth-title">Welcome back</div>
-        <div className="auth-sub">Sign in to Split Lite</div>
+        <div className="auth-sub">Sign in to SplitLite</div>
         <ErrorBox />
         <form onSubmit={async (e) => {
           e.preventDefault(); setBusy(true); setError(null);
