@@ -48,12 +48,10 @@ const css = `
   .ef-prefill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
   .ef-error { background: var(--red-bg); color: var(--red); padding: 10px 14px; border-radius: 10px; font-size: .82rem; }
 
-  /* Cards */
   .ef-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
   .ef-card-header { padding: 13px 16px 0; font-size: .7rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
   .ef-card-body { padding: 10px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
 
-  /* Inputs */
   .ef-input { width: 100%; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-family: inherit; font-size: .9rem; color: var(--text); outline: none; transition: border-color .15s; }
   .ef-input:focus { border-color: var(--accent); background: var(--surface); }
   .ef-input::placeholder { color: var(--muted); }
@@ -67,66 +65,43 @@ const css = `
   .ef-select:disabled { opacity: .6; cursor: not-allowed; }
   .ef-hint { font-size: .74rem; color: var(--muted); line-height: 1.5; }
 
-  /* Search dropdown — matches CreateGroupPage exactly (cg-dropdown / cg-result style) */
-  .ef-dropdown {
-    margin-top: 6px; border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden; background: var(--surface);
-    box-shadow: var(--shadow);
-  }
-  .ef-result {
-    padding: 10px 14px; cursor: pointer; font-size: .87rem;
-    transition: background .1s; display: flex; flex-direction: column; gap: 2px;
-  }
-  .ef-result:not(:last-child) { border-bottom: 1px solid var(--border); }
-  .ef-result:hover { background: var(--accent-bg); }
-  .ef-result-name { font-weight: 500; }
-  .ef-result-email { font-size: .75rem; color: var(--muted); }
-
-  /* Chips */
   .ef-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .ef-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 20px; background: var(--bg); border: 1px solid var(--border); font-size: .81rem; font-weight: 500; }
   .ef-chip.me { background: var(--accent-bg); border-color: rgba(62,207,178,.3); color: var(--accent); }
   .ef-chip-x { width: 15px; height: 15px; border-radius: 50%; background: var(--border); border: none; cursor: pointer; font-size: .68rem; color: var(--muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .1s; }
   .ef-chip-x:hover { background: var(--red-bg); color: var(--red); }
 
-  /* Who paid pills */
   .ef-paidby-list { display: flex; flex-wrap: wrap; gap: 8px; }
   .ef-paidby-pill { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--bg); font-family: inherit; font-size: .84rem; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .15s; }
   .ef-paidby-pill:hover { border-color: var(--accent); color: var(--text); }
   .ef-paidby-pill.selected { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 600; }
   .ef-paidby-av { width: 22px; height: 22px; border-radius: 6px; background: rgba(62,207,178,.2); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: .62rem; font-weight: 700; flex-shrink: 0; }
 
-  /* Split tabs */
   .ef-tabs { display: flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
   .ef-tab { flex: 1; padding: 8px 4px; border-radius: 7px; border: none; font-family: inherit; font-size: .78rem; font-weight: 500; color: var(--muted); cursor: pointer; background: transparent; transition: all .15s; text-align: center; min-width: 56px; }
   .ef-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.08); font-weight: 600; }
 
-  /* Split rows */
   .ef-split-row { display: flex; align-items: center; gap: 10px; }
   .ef-split-name { font-size: .84rem; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ef-split-num { width: 100px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--bg); font-family: 'DM Mono', monospace; font-size: .84rem; color: var(--text); outline: none; text-align: right; transition: border-color .15s; }
   .ef-split-num:focus { border-color: var(--accent); }
   .ef-split-sym { font-size: .84rem; color: var(--muted); flex-shrink: 0; }
 
-  /* One-pays radio */
   .ef-radio-list { display: flex; flex-direction: column; gap: 7px; }
   .ef-radio-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 9px; border: 1.5px solid var(--border); cursor: pointer; font-size: .87rem; transition: all .12s; }
   .ef-radio-item.checked { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 500; }
   .ef-radio-item input { accent-color: var(--accent); }
 
-  /* Exact $ progress bar */
   .ef-exact-bar { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 9px; font-size: .82rem; font-weight: 600; margin-top: 2px; }
   .ef-exact-bar.ok    { background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(62,207,178,.25); }
   .ef-exact-bar.over  { background: var(--red-bg); color: var(--red); border: 1px solid rgba(255,107,107,.2); }
   .ef-exact-bar.under { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
   .ef-exact-mono { font-family: 'DM Mono', monospace; font-size: .8rem; }
 
-  /* Submit */
   .ef-submit { width: 100%; padding: 14px; border-radius: 12px; border: none; background: var(--text); color: #fff; font-family: inherit; font-size: .95rem; font-weight: 600; cursor: pointer; transition: all .15s; margin-top: 4px; }
   .ef-submit:hover:not(:disabled) { background: #2d2d45; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,.15); }
   .ef-submit:disabled { opacity: .5; cursor: not-allowed; }
 
-  /* Loading */
   .ef-loading { display: flex; align-items: center; justify-content: center; height: 100vh; }
   .ef-spinner { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -161,8 +136,8 @@ export default function ExpenseFormPage() {
   const [paidBy, setPaidBy]     = useState<string>(myId);
 
   // users / search
-  const [users, setUsers]   = useState<UserProfileType[]>([]);
-  const [query, setQuery]   = useState("");
+  const [users, setUsers]     = useState<UserProfileType[]>([]);
+  const [query, setQuery]     = useState("");
   const [selectedIds, setSel] = useState<Set<string>>(new Set([myId]));
 
   // ui state
@@ -170,14 +145,13 @@ export default function ExpenseFormPage() {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
-  // Portal ref for dropdown (needed because card has overflow control)
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchRect, setSearchRect] = useState<DOMRect | null>(null);
 
   const emailOf = (u: any): string => (u.email ?? "").toLowerCase();
   const uName   = (uid: string) => users.find(u => u.id === uid)?.displayName ?? uid;
 
-  // ── 1. Load users + groups + pre-fill participants ─────────────────────
+  // ── 1. Load users + groups ────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -200,23 +174,20 @@ export default function ExpenseFormPage() {
     })();
   }, [myId, isEdit, prefillFriendId, prefillGroupId]);
 
-  // ── 2. Edit mode: fetch expense fields + participants ─────────────────
+  // ── 2. Edit mode: fetch existing expense ─────────────────────────────
   useEffect(() => {
     if (!isEdit || !id) return;
     (async () => {
       try {
-        // Fetch the expense record itself so we can pre-fill every field
         const { data: exp } = await client.models.Expense.get({ id });
         if (exp) {
           setTitle(exp.title ?? "");
           setAmount(exp.amount != null ? String(exp.amount) : "");
-          const sm = (exp.splitMethod ?? "EQUAL") as SplitMethod;
-          setSplit(sm);
+          setSplit((exp.splitMethod ?? "EQUAL") as SplitMethod);
           if (exp.paidBy)  setPaidBy(exp.paidBy);
           if (exp.groupId) setGroupId(exp.groupId);
         }
 
-        // Fetch participants + share counts
         const parts = await listParticipantsForExpense(id);
         const ids = parts.filter((p: any) => p?.userId).map((p: any) => p.userId as string);
         setSel(new Set(ids));
@@ -226,14 +197,10 @@ export default function ExpenseFormPage() {
           if (p.userId && typeof p.shareCount === "number") shareMap[p.userId] = p.shareCount;
         });
 
-        // Populate the correct split-mode state
         const method = (exp?.splitMethod ?? "EQUAL") as SplitMethod;
         if (method === "BY_SHARES")  setShares(shareMap);
         if (method === "BY_PERCENT") setPercents(shareMap);
-        if (method === "BY_EXACT")   {
-          // shareCount was stored as cents (×100), convert back to dollars
-          setExacts(Object.fromEntries(Object.entries(shareMap).map(([k, v]) => [k, v / 100])));
-        }
+        if (method === "BY_EXACT")   setExacts(Object.fromEntries(Object.entries(shareMap).map(([k, v]) => [k, v / 100])));
         if (method === "FULL") {
           const ower = parts.find((p: any) => p.shareCount === 100);
           if (ower?.userId) setFullOwer(ower.userId);
@@ -242,7 +209,7 @@ export default function ExpenseFormPage() {
     })();
   }, [isEdit, id]);
 
-  // ── 3. Group change → auto-add members ──────────────────────────────
+  // ── 3. Group change → auto-add members ───────────────────────────────
   useEffect(() => {
     if (!groupId || prefillGroupId || isEdit) return;
     (async () => {
@@ -253,12 +220,11 @@ export default function ExpenseFormPage() {
     })();
   }, [groupId]);
 
-  // ── 4. If paidBy was removed from participants, reset ──────────────
+  // ── 4. If paidBy removed from participants, reset ─────────────────────
   useEffect(() => {
     if (!selectedIds.has(paidBy)) setPaidBy(myId);
   }, [selectedIds]);
 
-  // Search results (exclude already-selected)
   const results = query
     ? users.filter(u => emailOf(u).includes(query.toLowerCase()) && !selectedIds.has(u.id)).slice(0, 8)
     : [];
@@ -266,26 +232,36 @@ export default function ExpenseFormPage() {
   const addUser    = (uid: string) => { setSel(p => new Set([...p, uid])); setQuery(""); setSearchRect(null); };
   const removeUser = (uid: string) => { if (uid === myId) return; setSel(p => { const n = new Set(p); n.delete(uid); return n; }); };
 
-  // Derived totals
   const amt        = parseFloat(amount) || 0;
   const exactTotal = Object.values(exacts).reduce((s, v) => s + v, 0);
   const exactRem   = amt - exactTotal;
   const exactOk    = Math.abs(exactRem) < 0.01;
   const pctTotal   = [...selectedIds].reduce((s, i) => s + (percents[i] || 0), 0);
 
+  // ── Smart navigation after save ───────────────────────────────────────
+  function navigateAfterSave(savedGroupId: string | null | undefined) {
+    if (savedGroupId) {
+      navigate(`/group/${savedGroupId}`);
+    } else if (prefillFriendId) {
+      navigate(`/friend/${prefillFriendId}`);
+    } else {
+      navigate(-1);
+    }
+  }
+
   // ── Submit ────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const ids = [...selectedIds];
     const parsedAmt = parseFloat(amount);
-    if (ids.length < 2)                                         return setError("Add at least one other participant.");
-    if (!title.trim() || isNaN(parsedAmt) || parsedAmt <= 0)    return setError("Enter a valid title and amount.");
-    if (!paidBy || !selectedIds.has(paidBy))                    return setError("Select who paid.");
+    if (ids.length < 2)                                       return setError("Add at least one other participant.");
+    if (!title.trim() || isNaN(parsedAmt) || parsedAmt <= 0) return setError("Enter a valid title and amount.");
+    if (!paidBy || !selectedIds.has(paidBy))                  return setError("Select who paid.");
 
     let counts: number[] = [];
-    if (splitMethod === "EQUAL")      counts = ids.map(() => 1);
-    if (splitMethod === "BY_SHARES")  {
-      if (ids.some(i => !shares[i]))  return setError("Enter shares for everyone.");
+    if (splitMethod === "EQUAL")     counts = ids.map(() => 1);
+    if (splitMethod === "BY_SHARES") {
+      if (ids.some(i => !shares[i])) return setError("Enter shares for everyone.");
       counts = ids.map(i => shares[i]);
     }
     if (splitMethod === "BY_PERCENT") {
@@ -294,7 +270,6 @@ export default function ExpenseFormPage() {
     }
     if (splitMethod === "BY_EXACT") {
       if (!exactOk) return setError(`$${Math.abs(exactRem).toFixed(2)} ${exactRem > 0 ? "still unallocated" : "over-allocated"}.`);
-      // Store as integer cents to avoid float precision issues
       counts = ids.map(i => Math.round((exacts[i] || 0) * 100));
     }
     if (splitMethod === "FULL") {
@@ -304,17 +279,26 @@ export default function ExpenseFormPage() {
 
     setSaving(true); setError(null);
     try {
+      const finalGroupId = groupId || null;
       if (isEdit && id) {
-        await updateExpense(id, { title: title.trim(), amount: parsedAmt, splitMethod, groupId: groupId || null });
+        // FIX: paidBy now included in updateExpense call
+        await updateExpense(id, {
+          title: title.trim(),
+          amount: parsedAmt,
+          splitMethod,
+          paidBy,                        // ← was missing before
+          groupId: finalGroupId,
+        });
         await setExpenseParticipants(id, ids, counts);
       } else {
         await createExpense({
           title: title.trim(), amount: parsedAmt, splitMethod, paidBy,
-          groupId: groupId || undefined,
+          groupId: finalGroupId ?? undefined,
           participantUserIds: ids, participantShareCounts: counts,
         });
       }
-      navigate("/");
+      // FIX: smart navigation — go back to group/friend context, not always "/"
+      navigateAfterSave(finalGroupId);
     } catch { setError("Failed to save. Please try again."); }
     finally { setSaving(false); }
   };
@@ -330,7 +314,6 @@ export default function ExpenseFormPage() {
     <div className="ef-root"><div className="ef-loading"><div className="ef-spinner" /></div></div></>
   );
 
-  // Shares preview (show dollar amounts per person when shares entered)
   const shareDollarPreview = () => {
     const total = [...selectedIds].reduce((s, i) => s + (shares[i] || 0), 0);
     if (total <= 0 || amt <= 0) return null;
@@ -363,7 +346,7 @@ export default function ExpenseFormPage() {
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-            {/* ── Title ── */}
+            {/* Title */}
             <div className="ef-card">
               <div className="ef-card-header">Expense title</div>
               <div className="ef-card-body">
@@ -371,7 +354,7 @@ export default function ExpenseFormPage() {
               </div>
             </div>
 
-            {/* ── Amount ── */}
+            {/* Amount */}
             <div className="ef-card">
               <div className="ef-card-header">Amount</div>
               <div className="ef-card-body">
@@ -382,7 +365,7 @@ export default function ExpenseFormPage() {
               </div>
             </div>
 
-            {/* ── Group ── */}
+            {/* Group */}
             <div className="ef-card">
               <div className="ef-card-header">Group (optional)</div>
               <div className="ef-card-body">
@@ -394,7 +377,7 @@ export default function ExpenseFormPage() {
               </div>
             </div>
 
-            {/* ── Participants ── */}
+            {/* Participants */}
             <div className="ef-card">
               <div className="ef-card-header">Participants ({selectedIds.size})</div>
               <div className="ef-card-body">
@@ -409,10 +392,6 @@ export default function ExpenseFormPage() {
                   ))}
                 </div>
 
-                {/*
-                  Search dropdown — using a portal so it's never clipped by the card,
-                  but styled to exactly match CreateGroupPage's cg-dropdown / cg-result.
-                */}
                 <div>
                   <input
                     ref={searchRef}
@@ -437,7 +416,6 @@ export default function ExpenseFormPage() {
                       left: searchRect.left,
                       width: searchRect.width,
                       zIndex: 9999,
-                      // ↓ EXACTLY matching .cg-dropdown
                       border: "1px solid #ebebed",
                       borderRadius: 10,
                       overflow: "hidden",
@@ -450,16 +428,10 @@ export default function ExpenseFormPage() {
                           key={u.id}
                           onMouseDown={() => addUser(u.id)}
                           style={{
-                            // ↓ EXACTLY matching .cg-result
-                            padding: "10px 14px",
-                            cursor: "pointer",
-                            fontSize: ".87rem",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 2,
+                            padding: "10px 14px", cursor: "pointer", fontSize: ".87rem",
+                            display: "flex", flexDirection: "column", gap: 2,
                             borderBottom: i < results.length - 1 ? "1px solid #ebebed" : "none",
-                            background: "transparent",
-                            transition: "background .1s",
+                            background: "transparent", transition: "background .1s",
                           }}
                           onMouseEnter={e => (e.currentTarget.style.background = "#edfaf7")}
                           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
@@ -475,7 +447,7 @@ export default function ExpenseFormPage() {
               </div>
             </div>
 
-            {/* ── Who paid ── */}
+            {/* Who paid */}
             <div className="ef-card">
               <div className="ef-card-header">Who paid?</div>
               <div className="ef-card-body">
@@ -496,7 +468,7 @@ export default function ExpenseFormPage() {
               </div>
             </div>
 
-            {/* ── How to split ── */}
+            {/* How to split */}
             <div className="ef-card">
               <div className="ef-card-header">How to split</div>
               <div className="ef-card-body">
@@ -508,14 +480,12 @@ export default function ExpenseFormPage() {
                   ))}
                 </div>
 
-                {/* Equal */}
                 {splitMethod === "EQUAL" && (
                   <div className="ef-hint">
                     Each person pays ${amt > 0 ? (amt / (selectedIds.size || 1)).toFixed(2) : "0.00"} equally
                   </div>
                 )}
 
-                {/* By shares */}
                 {splitMethod === "BY_SHARES" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {[...selectedIds].map(uid => (
@@ -537,7 +507,6 @@ export default function ExpenseFormPage() {
                   </div>
                 )}
 
-                {/* By percent */}
                 {splitMethod === "BY_PERCENT" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {[...selectedIds].map(uid => (
@@ -556,7 +525,6 @@ export default function ExpenseFormPage() {
                   </div>
                 )}
 
-                {/* Exact $ — new feature */}
                 {splitMethod === "BY_EXACT" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {[...selectedIds].map(uid => (
@@ -571,18 +539,15 @@ export default function ExpenseFormPage() {
                     ))}
                     <div className={`ef-exact-bar ${exactOk ? "ok" : exactRem > 0 ? "under" : "over"}`}>
                       <span>
-                        {exactOk
-                          ? "✓ Perfectly split"
-                          : exactRem > 0
-                            ? `$${exactRem.toFixed(2)} still to assign`
-                            : `$${Math.abs(exactRem).toFixed(2)} over-allocated`}
+                        {exactOk ? "✓ Perfectly split"
+                          : exactRem > 0 ? `$${exactRem.toFixed(2)} still to assign`
+                          : `$${Math.abs(exactRem).toFixed(2)} over-allocated`}
                       </span>
                       <span className="ef-exact-mono">${exactTotal.toFixed(2)} / ${amt.toFixed(2)}</span>
                     </div>
                   </div>
                 )}
 
-                {/* One pays (full) */}
                 {splitMethod === "FULL" && (
                   <div className="ef-radio-list">
                     {[...selectedIds].map(uid => (

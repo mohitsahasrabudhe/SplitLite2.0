@@ -11,6 +11,7 @@ import {
   addGroupMember,
   removeGroupMember,
   createExpense,
+  deleteGroup,   // ← add this
 } from "../api/expenses";
 import type { FlatExpense, GroupType } from "../api/expenses";
 import {
@@ -508,17 +509,35 @@ export default function DashboardPage() {
     const ini = initials(group.name);
     const myNet = myPaid - myOwed;
     const myNetCls = myNet > 0.01 ? "pos" : myNet < -0.01 ? "neg" : "zero";
-
-    const [showMembers, setShowMembers] = useState(false);
-    const [memberList, setMemberList] = useState<{ userId: string; displayName: string; email: string }[]>([]);
-    const [membersLoaded, setMembersLoaded] = useState(false);
-    const [memberSearch, setMemberSearch] = useState("");
-    const [addingId, setAddingId] = useState<string | null>(null);
-    const [removingId, setRemovingId] = useState<string | null>(null);
-
-    // FIX: portal refs for the search dropdown
-    const memberSearchRef = useRef<HTMLInputElement>(null);
-    const [searchRect, setSearchRect] = useState<DOMRect | null>(null);
+    const isCreator = (group as any).createdBy === myId;   // ← only show delete to creator
+  
+    const [showMembers, setShowMembers]             = useState(false);
+    const [memberList, setMemberList]               = useState<{ userId: string; displayName: string; email: string }[]>([]);
+    const [membersLoaded, setMembersLoaded]         = useState(false);
+    const [memberSearch, setMemberSearch]           = useState("");
+    const [addingId, setAddingId]                   = useState<string | null>(null);
+    const [removingId, setRemovingId]               = useState<string | null>(null);
+    const memberSearchRef                           = useRef<HTMLInputElement>(null);
+    const [searchRect, setSearchRect]               = useState<DOMRect | null>(null);
+  
+    // ── delete group state ──
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [confirmName, setConfirmName]             = useState("");
+    const [deleteError, setDeleteError]             = useState<string | null>(null);
+    const [deleting, setDeleting]                   = useState(false);
+    const nameMatches = confirmName.trim() === group.name.trim();
+  
+    async function handleDeleteGroup() {
+      if (!nameMatches) return;
+      setDeleting(true); setDeleteError(null);
+      try {
+        await deleteGroup(group.id);
+        window.location.reload();                  // refresh to remove group from sidebar
+      } catch {
+        setDeleteError("Failed to delete group. Please try again.");
+        setDeleting(false);
+      }
+    }
 
     async function loadMembers() {
       if (membersLoaded) return;
@@ -578,24 +597,68 @@ export default function DashboardPage() {
           .slice(0, 5)
       : [];
 
-    return (
-      <>
-        <div className="sl-profile-header">
-          <div className="sl-profile-avatar" style={{ background: col.bg, color: col.fg }}>{ini}</div>
-          <div>
-            <div className="sl-profile-name">{group.name}</div>
-            <div className="sl-profile-sub">{memberCount} member{memberCount !== 1 ? "s" : ""} · {totalExpenses} expense{totalExpenses !== 1 ? "s" : ""}</div>
+      return (
+        <>
+          {/* ── Delete group confirmation modal ── */}
+          {showDeleteConfirm && (
+            <div className="sl-modal-overlay" onClick={e => { if (e.target === e.currentTarget) { setShowDeleteConfirm(false); setConfirmName(""); setDeleteError(null); } }}>
+              <div className="sl-modal">
+                <div className="sl-modal-title">Delete "{group.name}"?</div>
+                <div className="sl-modal-sub">
+                  This will permanently delete the group, all its expenses, and all balance history. There is no undo.
+                </div>
+                <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
+                  Type the group name to confirm: <strong style={{ color: "var(--text)", fontFamily: "'DM Mono', monospace" }}>{group.name}</strong>
+                </div>
+                <input
+                  style={{ width: "100%", padding: "10px 13px", borderRadius: 9, border: "1.5px solid #ffd0d0", background: "var(--red-bg)", fontFamily: "inherit", fontSize: ".88rem", color: "var(--text)", outline: "none", marginBottom: 12 }}
+                  placeholder={group.name}
+                  value={confirmName}
+                  onChange={e => { setConfirmName(e.target.value); setDeleteError(null); }}
+                />
+                {deleteError && (
+                  <div style={{ fontSize: ".8rem", color: "var(--red)", background: "var(--red-bg)", padding: "8px 12px", borderRadius: 8, marginBottom: 12 }}>
+                    {deleteError}
+                  </div>
+                )}
+                <div className="sl-modal-actions">
+                  <button className="sl-modal-btn sl-modal-btn-ghost" onClick={() => { setShowDeleteConfirm(false); setConfirmName(""); setDeleteError(null); }}>Cancel</button>
+                  <button
+                    className="sl-modal-btn"
+                    style={{ flex: 1, padding: 11, borderRadius: 10, border: "none", background: nameMatches ? "var(--red)" : "var(--border)", color: nameMatches ? "#fff" : "var(--muted)", fontFamily: "inherit", fontSize: ".88rem", fontWeight: 600, cursor: nameMatches ? "pointer" : "not-allowed" }}
+                    disabled={!nameMatches || deleting}
+                    onClick={handleDeleteGroup}
+                  >
+                    {deleting ? "Deleting…" : "Delete group"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+    
+          {/* ── existing header ── */}
+          <div className="sl-profile-header">
+            <div className="sl-profile-avatar" style={{ background: col.bg, color: col.fg }}>{ini}</div>
+            <div>
+              <div className="sl-profile-name">{group.name}</div>
+              <div className="sl-profile-sub">{memberCount} member{memberCount !== 1 ? "s" : ""} · {totalExpenses} expense{totalExpenses !== 1 ? "s" : ""}</div>
+            </div>
           </div>
-        </div>
-
-        <div className="sl-action-row">
-          <Link to={`/expense/new?groupId=${group.id}`} className="sl-action-btn accent">
-            + Add expense
-          </Link>
-          <button className="sl-action-btn" onClick={toggleMembers}>
-            {showMembers ? "Hide members" : "👥 Manage members"}
-          </button>
-        </div>
+    
+          <div className="sl-action-row">
+            <Link to={`/expense/new?groupId=${group.id}`} className="sl-action-btn accent">
+              + Add expense
+            </Link>
+            <button className="sl-action-btn" onClick={toggleMembers}>
+              {showMembers ? "Hide members" : "👥 Manage members"}
+            </button>
+            {/* Only creator sees delete button */}
+            {isCreator && (
+              <button className="sl-action-btn danger" onClick={() => { setShowDeleteConfirm(true); setConfirmName(""); }}>
+                🗑 Delete group
+              </button>
+            )}
+          </div>
 
         {showMembers && (
           <div className="sl-section-card">
