@@ -58,7 +58,7 @@ const schema = a.schema({
     .model({
       title: a.string().required(),
       amount: a.float().required(),
-      splitMethod: a.enum(["EQUAL", "BY_SHARES", "BY_PERCENT", "FULL"]),
+      splitMethod: a.enum(["EQUAL", "BY_SHARES", "BY_PERCENT", "FULL", "BY_EXACT"]),
       totalShares: a.integer(),
 
       // null = direct expense

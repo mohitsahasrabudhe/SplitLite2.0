@@ -537,7 +537,7 @@ export default function AuthPage() {
             <label className="auth-label">Password</label>
             <PasswordField value={password} onChange={setPassword} placeholder="••••••••" />
           </div>
-          <button className="auth-btn" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+          <button className="auth-btn"   disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         </form>
         <button className="auth-text-btn-sm" onClick={async () => {
           if (!email) { setError("Enter your email first."); return; }

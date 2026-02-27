@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
-import ExpenseListPage from "./pages/ExpenseListPage";       // kept intact at /expenses
+import ExpenseListPage from "./pages/ExpenseListPage";
 import ExpenseFormPage from "./pages/ExpenseFormPage";
 import CreateGroupPage from "./pages/CreateGroupPage";
 import RelationshipDrillPage from "./pages/RelationshipDrillPage";
@@ -25,7 +25,7 @@ function App() {
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
 
-        {/* ── new dashboard (home) ── */}
+        {/* ── dashboard (home) ── */}
         <Route
           path="/"
           element={
@@ -55,7 +55,7 @@ function App() {
           }
         />
 
-        {/* ── existing pages, untouched ── */}
+        {/* ── expense form ── */}
         <Route
           path="/expense/new"
           element={
@@ -72,6 +72,8 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* ── create group ── */}
         <Route
           path="/group/new"
           element={
@@ -81,7 +83,7 @@ function App() {
           }
         />
 
-        {/* ── old expense list kept as fallback ── */}
+        {/* ── expense list (fallback) ── */}
         <Route
           path="/expenses"
           element={

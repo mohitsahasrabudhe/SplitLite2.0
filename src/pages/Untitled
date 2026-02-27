@@ -246,7 +246,7 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
                     <div className="sl-set-pill-icon">{s.exps[0].participants.length}</div>
                     <div className="sl-set-text">
                       <div className="sl-set-name">{s.label}</div>
-                      <div className="sl-set-count">{s.count} expense{s.count !== 1 ? "s" : ""}</div>
+                      <div className="sl-set-count">{s.count} expense{s.count !== 1 ? "s" : ""} · this hangout</div>
                     </div>
                   </div>
                 ))}
@@ -261,7 +261,7 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
                   <div>
                     <div style={{ fontSize: "1.15rem", fontWeight: 600, letterSpacing: "-.3px" }}>{selectedSet.label}</div>
                     <div style={{ fontSize: ".82rem", color: "var(--muted)", marginTop: 3 }}>
-                      {selectedSet.count} expense{selectedSet.count !== 1 ? "s" : ""} · {participantSets.length} hangout{participantSets.length !== 1 ? "s" : ""} with {contextName}
+                      {selectedSet.count} expense{selectedSet.count !== 1 ? "s" : ""} · this hangout
                     </div>
                   </div>
 

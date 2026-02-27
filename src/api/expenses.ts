@@ -130,7 +130,7 @@ export async function removeGroupMember(
 export async function createExpense(params: {
   title: string;
   amount: number;
-  splitMethod: "EQUAL" | "BY_SHARES" | "BY_PERCENT" | "FULL";
+  splitMethod: "EQUAL" | "BY_SHARES" | "BY_PERCENT" | "FULL" | "BY_EXACT";
   totalShares?: number;
   participantUserIds: string[];
   participantShareCounts?: number[];
@@ -185,7 +185,7 @@ export async function updateExpense(
   params: {
     title?: string;
     amount?: number;
-    splitMethod?: "EQUAL" | "BY_SHARES" | "BY_PERCENT" | "FULL";
+    splitMethod?: "EQUAL" | "BY_SHARES" | "BY_PERCENT" | "FULL" | "BY_EXACT";
     totalShares?: number;
     groupId?: string | null;
   }

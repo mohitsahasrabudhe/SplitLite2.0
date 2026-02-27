@@ -10,6 +10,8 @@ import type {
   ExpenseParticipantType,
   UserProfileType,
 } from "../api/expenses";
+// FIX #3: import the date formatter
+import { formatExpenseDate } from "../utils/splitCalc";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
@@ -71,6 +73,22 @@ const css = `
     font-weight: 500;
     letter-spacing: .04em;
     text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* FIX #3: date pill within the meta line */
+  .edc-date {
+    font-size: .7rem;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
   }
 
   .edc-breakdown-label {
@@ -235,21 +253,30 @@ export default function ExpenseDetailCard({
 
   const calculateAmount = (p: ExpenseParticipantType) => {
     if (participants.length === 0) return 0;
+  
     if (expense.splitMethod === "EQUAL") {
       return amount / participants.length;
     }
+  
+    if (expense.splitMethod === "BY_EXACT") {
+      // shareCount is stored in cents
+      return (p.shareCount ?? 0) / 100;
+    }
+  
     const weight = p.shareCount ?? 0;
     return totalWeight > 0 ? (weight / totalWeight) * amount : 0;
   };
 
   const splitLabel =
-    expense.splitMethod === "BY_SHARES"
-      ? "Split by shares"
-      : expense.splitMethod === "BY_PERCENT"
-      ? "Split by percent"
-      : expense.splitMethod === "FULL"
-      ? "One person owes all"
-      : "Equal split";
+  expense.splitMethod === "BY_SHARES"
+    ? "Split by shares"
+    : expense.splitMethod === "BY_PERCENT"
+    ? "Split by percent"
+    : expense.splitMethod === "BY_EXACT"
+    ? "Split by exact amounts"
+    : expense.splitMethod === "FULL"
+    ? "One person owes all"
+    : "Equal split";
 
   const handleDelete = async () => {
     if (!expense.id || !isAllowed) return;
@@ -273,7 +300,13 @@ export default function ExpenseDetailCard({
           <div className="edc-amount">${amount.toFixed(2)}</div>
         </div>
 
-        <div className="edc-meta">{splitLabel}</div>
+        {/* FIX #3: show split label AND a properly formatted date */}
+        <div className="edc-meta">
+          <span>{splitLabel}</span>
+          {expense.createdAt && (
+            <span className="edc-date">{formatExpenseDate(expense.createdAt)}</span>
+          )}
+        </div>
 
         <div className="edc-breakdown-label">Breakdown</div>
 

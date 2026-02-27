@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createGroup, listAllUsers } from "../api/expenses";
@@ -47,19 +48,24 @@ const css = `
   .cg-input:focus { border-color: var(--accent); background: var(--surface); }
   .cg-input::placeholder { color: var(--muted); }
 
-  /* search results dropdown */
-  .cg-dropdown {
-    margin-top: 6px; border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden; background: var(--surface);
-    box-shadow: var(--shadow);
+  /* portal dropdown — rendered in body, not here */
+  .cg-portal-dropdown {
+    position: fixed;
+    z-index: 9999;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,.12);
   }
   .cg-result {
     padding: 10px 14px; cursor: pointer; font-size: .87rem;
     transition: background .1s; display: flex; flex-direction: column; gap: 2px;
+    font-family: 'DM Sans', sans-serif;
   }
   .cg-result:not(:last-child) { border-bottom: 1px solid var(--border); }
   .cg-result:hover { background: var(--accent-bg); }
-  .cg-result-name { font-weight: 500; }
+  .cg-result-name { font-weight: 500; color: var(--text); }
   .cg-result-email { font-size: .75rem; color: var(--muted); }
 
   /* selected members */
@@ -121,6 +127,10 @@ export default function CreateGroupPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // FIX #5: ref on the search input so the portal can position itself
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
+
   useEffect(() => {
     (async () => {
       try {
@@ -141,6 +151,15 @@ export default function CreateGroupPage() {
       )
     : [];
 
+  // FIX #5: recalculate rect whenever results appear
+  useEffect(() => {
+    if (searchResults.length > 0 && searchInputRef.current) {
+      setDropdownRect(searchInputRef.current.getBoundingClientRect());
+    } else {
+      setDropdownRect(null);
+    }
+  }, [searchResults.length]);
+
   function addUser(id: string) {
     setSelectedUserIds((prev) => [...prev, id]);
     setSearch("");
@@ -155,8 +174,17 @@ export default function CreateGroupPage() {
     if (!name.trim()) return;
     try {
       setLoading(true);
-      await createGroup({ name: name.trim(), memberUserIds: [currentUserId, ...selectedUserIds] });
-      navigate("/");
+      const result = await createGroup({
+        name: name.trim(),
+        memberUserIds: [currentUserId, ...selectedUserIds],
+      });
+      // FIX #1: navigate directly to the new group instead of "/"
+      const newGroupId = (result as any)?.id ?? (result as any)?.data?.id;
+      if (newGroupId) {
+        navigate(`/group/${newGroupId}`);
+      } else {
+        navigate("/");
+      }
     } catch {
       alert("Failed to create group");
     } finally {
@@ -191,24 +219,43 @@ export default function CreateGroupPage() {
 
             <div className="cg-field">
               <label className="cg-label">Add members</label>
+
+              {/* FIX #5: attach ref to the search input */}
               <input
+                ref={searchInputRef}
                 className="cg-input"
                 type="text"
                 placeholder="Search by email…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                autoComplete="off"
               />
 
-              {searchResults.length > 0 && (
-                <div className="cg-dropdown">
-                  {searchResults.map((u) => (
-                    <div key={u.id} className="cg-result" onClick={() => addUser(u.id)}>
-                      <span className="cg-result-name">{u.displayName}</span>
-                      <span className="cg-result-email">{(u as any).email}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* FIX #5: render dropdown via portal so overflow:hidden can't clip it */}
+              {searchResults.length > 0 && dropdownRect &&
+                createPortal(
+                  <div
+                    className="cg-portal-dropdown"
+                    style={{
+                      top: dropdownRect.bottom + 4,
+                      left: dropdownRect.left,
+                      width: dropdownRect.width,
+                    }}
+                  >
+                    {searchResults.map((u) => (
+                      <div
+                        key={u.id}
+                        className="cg-result"
+                        onMouseDown={() => addUser(u.id)} // onMouseDown fires before onBlur
+                      >
+                        <span className="cg-result-name">{u.displayName}</span>
+                        <span className="cg-result-email">{(u as any).email}</span>
+                      </div>
+                    ))}
+                  </div>,
+                  document.body
+                )
+              }
 
               {/* members list */}
               <div className="cg-members">
