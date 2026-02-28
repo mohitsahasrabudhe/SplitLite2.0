@@ -7,11 +7,11 @@ import {
   listAllUsers,
   listMyGroups,
   listGroupMembers,
+  currencySymbol,
 } from "../api/expenses";
 import type { FlatExpense, GroupType } from "../api/expenses";
 import ExpenseDetailCard from "../components/ExpenseDetailCard";
 import { BASE_CSS, initials, groupColor } from "./sharedStyles";
-// FIX #3: import the new date formatter (added to splitCalc.ts)
 import { formatExpenseDate } from "../utils/splitCalc";
 
 type RichExpense = FlatExpense & {
@@ -21,38 +21,65 @@ type RichExpense = FlatExpense & {
 type DrillMode = "friend" | "group";
 
 // ── settlement helpers ────────────────────────────────────────────────────────
+type Settlement = {
+  debtorId:    string;
+  creditorId:  string;
+  debtorName:  string;
+  creditorName: string;
+  amount:      number;
+  currency:    string;
+};
+
 function computeSettlements(
   exps: RichExpense[],
   nameMap: Map<string, string>
-): { debtorId: string; creditorId: string; debtorName: string; creditorName: string; amount: number }[] {
-  const net: Record<string, number> = {};
+): Settlement[] {
+  // Group by currency first
+  const byCurrency: Record<string, RichExpense[]> = {};
   for (const exp of exps) {
-    if (!exp.paidBy || exp.participants.length === 0) continue;
-    net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
-    const totalWeight = exp.participants.reduce((s, p) => s + (p.shareCount ?? 1), 0);
-    for (const p of exp.participants) {
-      const owed = totalWeight > 0 ? ((p.shareCount ?? 1) / totalWeight) * exp.amount : 0;
-      net[p.userId] = (net[p.userId] ?? 0) - owed;
+    const cur = exp.currency || "USD";
+    if (!byCurrency[cur]) byCurrency[cur] = [];
+    byCurrency[cur].push(exp);
+  }
+
+  const results: Settlement[] = [];
+
+  for (const [currency, curExps] of Object.entries(byCurrency)) {
+    const net: Record<string, number> = {};
+    for (const exp of curExps) {
+      if (!exp.paidBy || exp.participants.length === 0) continue;
+      net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
+      const totalWeight = exp.participants.reduce((s, p) => s + (p.shareCount ?? 1), 0);
+      for (const p of exp.participants) {
+        const owed = totalWeight > 0 ? ((p.shareCount ?? 1) / totalWeight) * exp.amount : 0;
+        net[p.userId] = (net[p.userId] ?? 0) - owed;
+      }
+    }
+    const owed: [string, number][] = [];
+    const owes: [string, number][] = [];
+    for (const [u, amt] of Object.entries(net)) {
+      if (amt > 0.01)  owed.push([u, amt]);
+      if (amt < -0.01) owes.push([u, -amt]);
+    }
+    let i = 0, j = 0;
+    while (i < owes.length && j < owed.length) {
+      const [dId, debt]   = owes[i];
+      const [cId, credit] = owed[j];
+      const amt = Math.min(debt, credit);
+      results.push({
+        debtorId:    dId,
+        creditorId:  cId,
+        debtorName:  nameMap.get(dId) ?? dId,
+        creditorName: nameMap.get(cId) ?? cId,
+        amount:      amt,
+        currency,
+      });
+      owes[i][1] -= amt; owed[j][1] -= amt;
+      if (owes[i][1] <= 0.01) i++;
+      if (owed[j][1] <= 0.01) j++;
     }
   }
-  const owed: [string, number][] = [];
-  const owes: [string, number][] = [];
-  for (const [u, amt] of Object.entries(net)) {
-    if (amt > 0.01) owed.push([u, amt]);
-    if (amt < -0.01) owes.push([u, -amt]);
-  }
-  const res: { debtorId: string; creditorId: string; debtorName: string; creditorName: string; amount: number }[] = [];
-  let i = 0, j = 0;
-  while (i < owes.length && j < owed.length) {
-    const [dId, debt] = owes[i];
-    const [cId, credit] = owed[j];
-    const amt = Math.min(debt, credit);
-    res.push({ debtorId: dId, creditorId: cId, debtorName: nameMap.get(dId) ?? dId, creditorName: nameMap.get(cId) ?? cId, amount: amt });
-    owes[i][1] -= amt; owed[j][1] -= amt;
-    if (owes[i][1] <= 0.01) i++;
-    if (owed[j][1] <= 0.01) j++;
-  }
-  return res;
+  return results;
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -63,13 +90,13 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
   const navigate = useNavigate();
   const { userId: friendId, groupId } = useParams<{ userId?: string; groupId?: string }>();
 
-  const [allExpenses, setAllExpenses] = useState<RichExpense[]>([]);
-  const [groups, setGroups] = useState<GroupType[]>([]);
-  const [userMap, setUserMap] = useState<Map<string, { displayName: string; email: string }>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [allExpenses, setAllExpenses]       = useState<RichExpense[]>([]);
+  const [groups, setGroups]                 = useState<GroupType[]>([]);
+  const [userMap, setUserMap]               = useState<Map<string, { displayName: string; email: string }>>(new Map());
+  const [loading, setLoading]               = useState(true);
+  const [error, setError]                   = useState<string | null>(null);
   const [selectedSetKey, setSelectedSetKey] = useState<string | null>(null);
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [deletedIds, setDeletedIds]         = useState<Set<string>>(new Set());
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -81,7 +108,7 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
           listAllUsers(),
           listMyGroups(myId),
         ]);
-        const cleanUsers = users.filter((u: any) => u?.id);
+        const cleanUsers  = users.filter((u: any) => u?.id);
         const cleanGroups = myGroups.filter((g: any) => g?.id);
         setGroups(cleanGroups);
 
@@ -95,9 +122,9 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
             return {
               ...exp,
               participants: parts.filter((p: any) => p?.userId).map((p: any) => ({
-                userId: p.userId,
+                userId:      p.userId,
                 displayName: uMap.get(p.userId)?.displayName ?? "Unknown",
-                shareCount: p.shareCount ?? 1,
+                shareCount:  p.shareCount ?? 1,
               })),
             };
           })
@@ -112,89 +139,74 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     })();
   }, [myId]);
 
-  // ── filter to relevant expenses ───────────────────────────────────────────
   const relevantExpenses = useMemo(() => {
-    const alive = allExpenses.filter((e) => !deletedIds.has(e.id));
+    const alive = allExpenses.filter(e => !deletedIds.has(e.id));
     if (mode === "friend" && friendId) {
-      return alive.filter(
-        (e) => !e.groupId &&
-          e.participants.some((p) => p.userId === myId) &&
-          e.participants.some((p) => p.userId === friendId)
+      return alive.filter(e =>
+        !e.groupId &&
+        e.participants.some(p => p.userId === myId) &&
+        e.participants.some(p => p.userId === friendId)
       );
     }
     if (mode === "group" && groupId) {
-      return alive.filter((e) => e.groupId === groupId);
+      return alive.filter(e => e.groupId === groupId);
     }
     return [];
   }, [allExpenses, mode, friendId, groupId, myId, deletedIds]);
 
-  // ── participant sets ───────────────────────────────────────────────────────
   const participantSets = useMemo(() => {
     const setMap = new Map<string, RichExpense[]>();
-    relevantExpenses.forEach((exp) => {
-      const key = exp.participants.map((p) => p.userId).sort().join("|");
+    relevantExpenses.forEach(exp => {
+      const key = exp.participants.map(p => p.userId).sort().join("|");
       if (!setMap.has(key)) setMap.set(key, []);
       setMap.get(key)!.push(exp);
     });
-
     return [...setMap.entries()].map(([key, exps]) => {
       const label = exps[0].participants
-        .map((p) => {
-          if (p.userId === myId) return "You";
-          return userMap.get(p.userId)?.displayName ?? p.displayName;
-        })
-        .sort((a) => (a === "You" ? -1 : 1))
+        .map(p => p.userId === myId ? "You" : (userMap.get(p.userId)?.displayName ?? p.displayName))
+        .sort(a => a === "You" ? -1 : 1)
         .join(" + ");
       return { key, label, exps, count: exps.length };
     }).sort((a, b) => b.count - a.count);
   }, [relevantExpenses, myId, userMap]);
 
-  // auto-select first set
   useEffect(() => {
     if (!loading && selectedSetKey === null && participantSets.length > 0) {
       setSelectedSetKey(participantSets[0].key);
     }
   }, [loading, participantSets]);
 
-  const selectedSet = participantSets.find((s) => s.key === selectedSetKey) ?? null;
+  const selectedSet = participantSets.find(s => s.key === selectedSetKey) ?? null;
 
-  // ── context info ──────────────────────────────────────────────────────────
-  const friendInfo = mode === "friend" && friendId ? userMap.get(friendId) : null;
-  const groupInfo = mode === "group" && groupId ? groups.find((g) => g.id === groupId) : null;
-  const groupIdx = groupInfo ? groups.indexOf(groupInfo) : 0;
-  const groupCol = groupColor(groupIdx);
-
-  const contextName = mode === "friend"
-    ? (friendInfo?.displayName ?? "Friend")
-    : (groupInfo?.name ?? "Group");
+  const friendInfo  = mode === "friend" && friendId ? userMap.get(friendId) : null;
+  const groupInfo   = mode === "group"  && groupId  ? groups.find(g => g.id === groupId) : null;
+  const groupIdx    = groupInfo ? groups.indexOf(groupInfo) : 0;
+  const groupCol    = groupColor(groupIdx);
+  const contextName = mode === "friend" ? (friendInfo?.displayName ?? "Friend") : (groupInfo?.name ?? "Group");
 
   const contextAvatar = mode === "friend"
     ? <div style={{ width: 40, height: 40, borderRadius: 11, background: "var(--blue-bg)", color: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: ".9rem" }}>{initials(contextName)}</div>
     : <div style={{ width: 40, height: 40, borderRadius: 11, background: groupCol.bg, color: groupCol.fg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: ".9rem" }}>{initials(contextName)}</div>;
 
-  // ── settlement for selected set ────────────────────────────────────────────
   const settlements = useMemo(() => {
     if (!selectedSet) return [];
     const nameMap = new Map<string, string>();
-    selectedSet.exps.forEach((e) => e.participants.forEach((p) => {
+    selectedSet.exps.forEach(e => e.participants.forEach(p => {
       nameMap.set(p.userId, p.userId === myId ? "You" : (userMap.get(p.userId)?.displayName ?? p.displayName));
     }));
-    return computeSettlements(selectedSet.exps, nameMap).filter((s) => s.amount > 0.01);
+    return computeSettlements(selectedSet.exps, nameMap).filter(s => s.amount > 0.01);
   }, [selectedSet, myId, userMap]);
 
   const payerName = (exp: RichExpense) => {
     if (!exp.paidBy) return "Unknown";
     if (exp.paidBy === myId) return "You";
-    return userMap.get(exp.paidBy)?.displayName ?? exp.participants.find((p) => p.userId === exp.paidBy)?.displayName ?? "Unknown";
+    return userMap.get(exp.paidBy)?.displayName ?? exp.participants.find(p => p.userId === exp.paidBy)?.displayName ?? "Unknown";
   };
 
-  // ── render ────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{BASE_CSS}</style>
@@ -231,13 +243,12 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
           </div>
         ) : (
           <div className="sl-body">
-            {/* ── sidebar: participant sets ── */}
             <nav className="sl-sidebar">
               <div className="sl-sidebar-scroll">
                 <div className="sl-section-label">
                   {mode === "friend" ? `Hangouts with ${contextName}` : `Hangouts in ${contextName}`}
                 </div>
-                {participantSets.map((s) => (
+                {participantSets.map(s => (
                   <div
                     key={s.key}
                     className={`sl-set-pill ${selectedSetKey === s.key ? "active" : ""}`}
@@ -253,11 +264,9 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
               </div>
             </nav>
 
-            {/* ── right panel ── */}
             <div className="sl-panel">
               {selectedSet ? (
                 <div className="sl-panel-inner">
-                  {/* set header */}
                   <div>
                     <div style={{ fontSize: "1.15rem", fontWeight: 600, letterSpacing: "-.3px" }}>{selectedSet.label}</div>
                     <div style={{ fontSize: ".82rem", color: "var(--muted)", marginTop: 3 }}>
@@ -265,7 +274,7 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
                     </div>
                   </div>
 
-                  {/* settlements */}
+                  {/* settlements — now per currency */}
                   <div className="sl-section-card">
                     <div className="sl-section-card-header">
                       <span className="sl-section-card-title">Balances</span>
@@ -275,13 +284,17 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
                         <div style={{ textAlign: "center", padding: "8px 0", color: "var(--muted)", fontSize: ".83rem" }}>All settled up ✓</div>
                       ) : (
                         settlements.map((s, i) => {
-                          const isMe = s.debtorId === myId;
-                          const cls = isMe ? "owes" : "owed";
+                          const isMe  = s.debtorId === myId;
+                          const cls   = isMe ? "owes" : "owed";
                           const label = isMe ? `You → ${s.creditorName}` : `${s.debtorName} → ${s.creditorId === myId ? "you" : s.creditorName}`;
+                          const sym   = currencySymbol(s.currency);
                           return (
                             <div key={i} className={`sl-settlement ${cls}`}>
                               <span className="sl-s-text">{label}</span>
-                              <span className="sl-s-amount">${s.amount.toFixed(2)}</span>
+                              <span className="sl-s-amount">
+                                {sym}{s.amount.toFixed(2)}
+                                {s.currency !== "USD" && <span style={{ fontSize: ".72rem", marginLeft: 3, opacity: .7 }}>{s.currency}</span>}
+                              </span>
                             </div>
                           );
                         })
@@ -297,21 +310,18 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
                     <div className="sl-exp-list">
                       {selectedSet.exps
                         .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
-                        .map((expense) => (
+                        .map(expense => (
                           <div key={expense.id} className="sl-exp-item">
                             <div className="sl-paid-by">
                               Paid by {payerName(expense)}
-                              {/* FIX #3: use formatExpenseDate instead of relativeTime */}
                               {expense.createdAt && (
-                                <span style={{ marginLeft: 8 }}>
-                                  {formatExpenseDate(expense.createdAt)}
-                                </span>
+                                <span style={{ marginLeft: 8 }}>{formatExpenseDate(expense.createdAt)}</span>
                               )}
                             </div>
                             <ExpenseDetailCard
                               expense={expense}
                               currentUserId={myId}
-                              onDeleted={() => setDeletedIds((prev) => new Set([...prev, expense.id]))}
+                              onDeleted={() => setDeletedIds(prev => new Set([...prev, expense.id]))}
                               groupMemberIds={mode === "group" ? groupMemberIds : undefined}
                             />
                           </div>
@@ -320,19 +330,7 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
 
                     <button
                       onClick={() => navigate("/")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        marginTop: 20,
-                        background: "none",
-                        border: "none",
-                        color: "var(--muted)",
-                        fontSize: ".82rem",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        padding: "4px 0",
-                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 20, background: "none", border: "none", color: "var(--muted)", fontSize: ".82rem", cursor: "pointer", fontFamily: "inherit", padding: "4px 0" }}
                     >
                       ← Back to overview
                     </button>

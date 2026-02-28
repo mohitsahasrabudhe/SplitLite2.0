@@ -8,10 +8,14 @@ import {
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
 import { useAuth } from "../context/AuthContext";
-import { listMyExpenses, listMyGroups, listParticipantsForExpense, deleteAllUserData } from "../api/expenses";
+import {
+  listMyExpenses, listMyGroups, listParticipantsForExpense,
+  deleteAllUserData, COMMON_CURRENCIES, currencySymbol,
+} from "../api/expenses";
 
 const client = generateClient<Schema>();
 type Step = "signIn" | "signUp" | "confirm" | "reset" | "resetConfirm";
+type OnboardStep = "displayName" | "currency";
 type AccountSection = null | "changePassword" | "deleteAccount";
 
 function friendlyError(msg: string) {
@@ -34,12 +38,10 @@ function checkPwReqs(pw: string): PwReqs {
     hasSpecial: /[^A-Za-z0-9]/.test(pw),
   };
 }
-
 function allReqsMet(pw: string) {
   const r = checkPwReqs(pw);
   return r.minLength && r.hasUpper && r.hasLower && r.hasNumber && r.hasSpecial;
 }
-
 function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: "", color: "" };
   const r = checkPwReqs(pw);
@@ -53,7 +55,6 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
   ];
   return { score, ...levels[score - 1] };
 }
-
 function getGreeting(name: string) {
   const h = new Date().getHours();
   const first = name.split(" ")[0];
@@ -75,7 +76,6 @@ const css = `
     --radius: 16px;
   }
   body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--text); }
-
   .auth-root { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; }
   .auth-brand { font-size: 1.3rem; font-weight: 600; letter-spacing: -.3px; margin-bottom: 32px; }
   .auth-brand .a { color: var(--accent); }
@@ -96,9 +96,6 @@ const css = `
   .auth-btn:disabled { opacity: .5; cursor: not-allowed; }
   .auth-btn-ghost { width: 100%; padding: 11px; border-radius: 10px; border: 1.5px solid var(--border); background: transparent; font-family: inherit; font-size: .9rem; font-weight: 500; color: var(--text); cursor: pointer; margin-top: 8px; transition: all .15s; }
   .auth-btn-ghost:hover { background: var(--bg); }
-  .auth-btn-danger { width: 100%; padding: 12px; border-radius: 10px; border: none; background: var(--red); color: #fff; font-family: inherit; font-size: .9rem; font-weight: 500; cursor: pointer; margin-top: 8px; transition: all .15s; }
-  .auth-btn-danger:hover:not(:disabled) { background: #e55555; transform: translateY(-1px); }
-  .auth-btn-danger:disabled { opacity: .5; cursor: not-allowed; }
   .auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
   .auth-divider-line { flex: 1; height: 1px; background: var(--border); }
   .auth-divider-text { font-size: .75rem; color: var(--muted); }
@@ -112,6 +109,23 @@ const css = `
   .auth-resend-btn:disabled { opacity: .45; cursor: not-allowed; }
   .auth-resend-timer { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+  /* currency grid */
+  .curr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .curr-tile { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); cursor: pointer; transition: all .15s; font-family: inherit; text-align: left; }
+  .curr-tile:hover { border-color: var(--accent); background: var(--accent-bg); }
+  .curr-tile.sel { border-color: var(--accent); background: var(--accent-bg); }
+  .curr-sym { width: 32px; height: 32px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: .95rem; font-weight: 700; flex-shrink: 0; font-family: 'DM Mono', monospace; }
+  .curr-tile.sel .curr-sym { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .curr-info { display: flex; flex-direction: column; gap: 1px; }
+  .curr-code { font-size: .85rem; font-weight: 600; color: var(--text); }
+  .curr-name { font-size: .72rem; color: var(--muted); }
+  .curr-custom-row { display: flex; gap: 8px; margin-bottom: 6px; }
+  .curr-custom-input { flex: 1; padding: 10px 13px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-family: 'DM Mono', monospace; font-size: .88rem; color: var(--text); outline: none; transition: border-color .15s; text-transform: uppercase; }
+  .curr-custom-input:focus { border-color: var(--accent); background: var(--surface); }
+  .curr-custom-input::placeholder { font-family: 'DM Sans', sans-serif; text-transform: none; color: var(--muted); }
+  .curr-hint { font-size: .74rem; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+
+  /* pw */
   .pw-wrapper { position: relative; }
   .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--muted); font-size: .8rem; font-family: inherit; padding: 4px; line-height: 1; transition: color .12s; }
   .pw-toggle:hover { color: var(--text); }
@@ -125,7 +139,7 @@ const css = `
   .pw-req-chip { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: .62rem; font-weight: 800; color: transparent; transition: background .2s, border-color .2s, color .15s, transform .2s; }
   .pw-req.met .pw-req-chip { background: var(--accent); border-color: var(--accent); color: #fff; transform: scale(1.1); }
 
-  /* ── welcome / account page ── */
+  /* welcome/account */
   .wp-root { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 0 16px 48px; }
   .wp-hero { width: 100%; max-width: 520px; background: var(--text); border-radius: 0 0 32px 32px; padding: 40px 28px 48px; margin-bottom: -32px; position: relative; overflow: hidden; }
   .wp-hero::before { content: ''; position: absolute; width: 260px; height: 260px; border-radius: 50%; border: 50px solid rgba(62,207,178,.1); top: -80px; right: -80px; pointer-events: none; }
@@ -145,7 +159,7 @@ const css = `
   .wp-cta-text { font-size: 1.05rem; font-weight: 600; color: #fff; }
   .wp-cta-emoji { font-size: 1.6rem; }
   .wp-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-  .wp-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 12px; display: flex; flex-direction: column; gap: 3px; animation: slideUp .4s ease both; }
+  .wp-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 12px; display: flex; flex-direction: column; gap: 3px; }
   .wp-stat-value { font-size: 1.3rem; font-weight: 600; letter-spacing: -.5px; font-family: 'DM Mono', monospace; }
   .wp-stat-value.green { color: var(--accent); }
   .wp-stat-value.red { color: var(--red); }
@@ -153,7 +167,6 @@ const css = `
   .wp-stat-label { font-size: .72rem; color: var(--muted); font-weight: 500; }
   .wp-rule { height: 1px; background: var(--border); margin: 4px 0 16px; }
   .wp-secondary { display: flex; flex-direction: column; gap: 8px; }
-
   .wp-action-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; background: transparent; width: 100%; font-family: inherit; text-decoration: none; transition: background .12s; }
   .wp-action-row:hover { background: var(--bg); }
   .wp-action-row.danger-row { border-color: #ffd0d0; }
@@ -167,8 +180,6 @@ const css = `
   .wp-action-name.red { color: var(--red); }
   .wp-action-sub { font-size: .74rem; color: var(--muted); }
   .wp-action-chevron { color: var(--muted); font-size: 1rem; }
-
-  /* expanded section panels */
   .wp-section-panel { border: 1.5px solid var(--border); border-radius: 12px; padding: 18px; margin-top: 4px; }
   .wp-section-panel.danger { border-color: #ffd0d0; background: var(--red-bg); }
   .wp-section-title { font-size: .95rem; font-weight: 600; margin-bottom: 4px; }
@@ -185,7 +196,6 @@ const css = `
   .wp-section-save { flex: 2; padding: 10px; border-radius: 9px; border: none; background: var(--text); color: #fff; font-family: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .12s; }
   .wp-section-save:hover:not(:disabled) { background: #2d2d45; }
   .wp-section-save:disabled { opacity: .5; cursor: not-allowed; }
-
   .wp-stats-loading { display: flex; gap: 10px; margin-bottom: 20px; }
   .wp-shimmer { flex: 1; height: 70px; border-radius: 12px; background: linear-gradient(90deg, var(--border) 25%, #f0f0f3 50%, var(--border) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -195,7 +205,7 @@ const css = `
     .wp-card { padding: 20px 16px; }
     .wp-greeting { font-size: 1.35rem; }
     .wp-stat-value { font-size: 1.1rem; }
-    .wp-cta { padding: 16px 18px; }
+    .curr-grid { grid-template-columns: 1fr; }
     .pw-checklist { grid-template-columns: 1fr; }
   }
 `;
@@ -275,25 +285,68 @@ function ResendCode({ onResend }: { onResend: () => Promise<void> }) {
   );
 }
 
-// ── Account / Welcome screen ──────────────────────────────────────────────────
+// ── Currency picker (reused in onboarding + account settings) ─────────────────
+function CurrencyPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [custom, setCustom] = useState("");
+  const isCustom = !COMMON_CURRENCIES.find(c => c.code === value);
+
+  return (
+    <div>
+      <div className="curr-grid">
+        {COMMON_CURRENCIES.map(c => (
+          <button
+            key={c.code}
+            type="button"
+            className={`curr-tile ${value === c.code ? "sel" : ""}`}
+            onClick={() => { onChange(c.code); setCustom(""); }}
+          >
+            <div className="curr-sym">{c.symbol}</div>
+            <div className="curr-info">
+              <div className="curr-code">{c.code}</div>
+              <div className="curr-name">{c.label.split(" — ")[1]}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="curr-custom-row">
+        <input
+          className="curr-custom-input"
+          placeholder="Other… (e.g. MYR, DOGE)"
+          value={custom}
+          maxLength={10}
+          onChange={e => {
+            const v = e.target.value.toUpperCase();
+            setCustom(v);
+            if (v.trim().length > 0) onChange(v.trim());
+          }}
+        />
+      </div>
+      <div className="curr-hint">
+        {isCustom && value ? `Using "${value}" as your currency label.` : "Or type any currency code, crypto, or label."}
+      </div>
+    </div>
+  );
+}
+
+// ── Welcome / Account screen ──────────────────────────────────────────────────
 function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
   const [stats, setStats]           = useState<{ expenses: number; groups: number; netBalance: number } | null>(null);
   const [activeSection, setSection] = useState<AccountSection>(null);
 
-  // change password state
   const [currentPw, setCurrentPw]   = useState("");
   const [newPw, setNewPw]           = useState("");
   const [pwError, setPwError]       = useState<string | null>(null);
   const [pwSuccess, setPwSuccess]   = useState(false);
   const [pwBusy, setPwBusy]         = useState(false);
 
-  // delete account state
   const [deleteEmail, setDeleteEmail] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting]       = useState(false);
 
   const initials = user.displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
   const emailMatches = deleteEmail.trim().toLowerCase() === (user.email ?? "").toLowerCase();
+  const defaultCurrency = user.defaultCurrency ?? "USD";
+  const sym = currencySymbol(defaultCurrency);
 
   useEffect(() => {
     (async () => {
@@ -324,11 +377,9 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
     setPwBusy(true); setPwError(null); setPwSuccess(false);
     try {
       await updatePassword({ oldPassword: currentPw, newPassword: newPw });
-      setPwSuccess(true);
-      setCurrentPw(""); setNewPw("");
-    } catch (err: any) {
-      setPwError(friendlyError(err.message));
-    } finally { setPwBusy(false); }
+      setPwSuccess(true); setCurrentPw(""); setNewPw("");
+    } catch (err: any) { setPwError(friendlyError(err.message)); }
+    finally { setPwBusy(false); }
   }
 
   async function handleDeleteAccount() {
@@ -338,10 +389,7 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
       await deleteAllUserData(user.userId);
       await deleteUser();
       await signOut();
-    } catch (err: any) {
-      setDeleteError("Something went wrong. Please try again.");
-      setDeleting(false);
-    }
+    } catch { setDeleteError("Something went wrong. Please try again."); setDeleting(false); }
   }
 
   const bal = stats?.netBalance ?? 0;
@@ -384,7 +432,7 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
               </div>
               <div className="wp-stat">
                 <div className={`wp-stat-value ${bal > 0.01 ? "green" : bal < -0.01 ? "red" : "neutral"}`}>
-                  {bal >= 0 ? "+" : "-"}${Math.abs(bal).toFixed(0)}
+                  {bal >= 0 ? "+" : "-"}{sym}{Math.abs(bal).toFixed(0)}
                 </div>
                 <div className="wp-stat-label">{bal > 0.01 ? "Owed to you" : bal < -0.01 ? "You owe" : "All settled"}</div>
               </div>
@@ -394,7 +442,6 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
           <div className="wp-rule" />
 
           <div className="wp-secondary">
-            {/* Sign out */}
             <button className="wp-action-row" onClick={async () => { await signOut(); window.history.replaceState({}, "", "/auth"); }}>
               <div className="wp-action-left">
                 <div className="wp-action-icon gray">🚪</div>
@@ -406,7 +453,6 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
               <span className="wp-action-chevron">›</span>
             </button>
 
-            {/* Change password */}
             <button className="wp-action-row" onClick={() => toggleSection("changePassword")}>
               <div className="wp-action-left">
                 <div className="wp-action-icon green">🔑</div>
@@ -429,8 +475,7 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
                     <label className="auth-label">Current password</label>
                     <div className="pw-wrapper">
                       <input className="auth-input" type="password" placeholder="••••••••"
-                        value={currentPw} onChange={e => setCurrentPw(e.target.value)}
-                        style={{ paddingRight: 44 }} required />
+                        value={currentPw} onChange={e => setCurrentPw(e.target.value)} style={{ paddingRight: 44 }} required />
                     </div>
                   </div>
                   <div className="auth-field" style={{ marginBottom: 0 }}>
@@ -447,7 +492,6 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
               </div>
             )}
 
-            {/* Delete account */}
             <button className="wp-action-row danger-row" onClick={() => toggleSection("deleteAccount")}>
               <div className="wp-action-left">
                 <div className="wp-action-icon red">⚠️</div>
@@ -469,21 +513,11 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
                 <div className="wp-confirm-label">
                   Type your email to confirm: <strong>{user.email}</strong>
                 </div>
-                <input
-                  className="auth-input danger"
-                  type="email"
-                  placeholder={user.email}
-                  value={deleteEmail}
-                  onChange={e => { setDeleteEmail(e.target.value); setDeleteError(null); }}
-                />
+                <input className="auth-input danger" type="email" placeholder={user.email}
+                  value={deleteEmail} onChange={e => { setDeleteEmail(e.target.value); setDeleteError(null); }} />
                 <div className="wp-section-actions">
                   <button type="button" className="wp-section-cancel" onClick={() => toggleSection(null)}>Cancel</button>
-                  <button
-                    type="button"
-                    className="wp-section-confirm"
-                    disabled={!emailMatches || deleting}
-                    onClick={handleDeleteAccount}
-                  >
+                  <button type="button" className="wp-section-confirm" disabled={!emailMatches || deleting} onClick={handleDeleteAccount}>
                     {deleting ? "Deleting…" : "Yes, delete everything"}
                   </button>
                 </div>
@@ -502,10 +536,12 @@ function WelcomeScreen({ user, signOut }: { user: any; signOut: () => void }) {
 export default function AuthPage() {
   const { user, loading, refreshProfile, signOut, completeOnboarding } = useAuth();
   const [step, setStep]               = useState<Step>("signIn");
+  const [onboardStep, setOnboardStep] = useState<OnboardStep>("displayName");
   const [email, setEmail]             = useState("");
   const [password, setPassword]       = useState("");
   const [code, setCode]               = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [pendingCurrency, setPendingCurrency] = useState("USD");
   const [error, setError]             = useState<string | null>(null);
   const [busy, setBusy]               = useState(false);
 
@@ -518,7 +554,8 @@ export default function AuthPage() {
   if (user && user.displayName && !showAccount) return <Navigate to="/" replace />;
   if (user && user.displayName && showAccount)  return <WelcomeScreen user={user} signOut={signOut} />;
 
-  if (user && !user.displayName) return (
+  // ── Onboarding step 1: display name ──────────────────────────────────────
+  if (user && !user.displayName && onboardStep === "displayName") return (
     <><style>{css}</style>
     <div className="auth-root"><Brand />
       <div className="auth-card">
@@ -526,19 +563,45 @@ export default function AuthPage() {
         <div className="auth-sub">What should we call you? This is how you'll appear to friends.</div>
         <ErrorBox />
         <form onSubmit={async (e) => {
-          e.preventDefault(); if (!displayName.trim()) return;
-          setBusy(true); setError(null);
-          try {
-            await client.models.UserProfile.create({ id: user.userId, displayName: displayName.trim(), email: user.email });
-            completeOnboarding(displayName.trim());
-          } catch (err: any) { setError(friendlyError(err.message)); } finally { setBusy(false); }
+          e.preventDefault();
+          if (!displayName.trim()) return;
+          setOnboardStep("currency");
         }}>
           <div className="auth-field">
             <label className="auth-label">Display name</label>
-            <input className="auth-input" placeholder="e.g. Mohit" value={displayName} onChange={e => setDisplayName(e.target.value)} required />
+            <input className="auth-input" placeholder="e.g. Mohit" value={displayName} onChange={e => setDisplayName(e.target.value)} required autoFocus />
           </div>
-          <button className="auth-btn" disabled={busy}>{busy ? "Saving…" : "Let's go →"}</button>
+          <button className="auth-btn" disabled={!displayName.trim()}>Next →</button>
         </form>
+      </div>
+    </div></>
+  );
+
+  // ── Onboarding step 2: default currency ──────────────────────────────────
+  if (user && !user.displayName && onboardStep === "currency") return (
+    <><style>{css}</style>
+    <div className="auth-root"><Brand />
+      <div className="auth-card">
+        <button className="auth-back" onClick={() => setOnboardStep("displayName")}>← Back</button>
+        <div className="auth-title">What currency do you use?</div>
+        <div className="auth-sub">This will be the default for your expenses. You can change it per expense anytime.</div>
+        <ErrorBox />
+        <CurrencyPicker value={pendingCurrency} onChange={setPendingCurrency} />
+        <button className="auth-btn" disabled={busy} onClick={async () => {
+          setBusy(true); setError(null);
+          try {
+            await client.models.UserProfile.create({
+              id: user.userId,
+              displayName: displayName.trim(),
+              email: user.email,
+              defaultCurrency: pendingCurrency,
+            });
+            completeOnboarding(displayName.trim());
+          } catch (err: any) { setError(friendlyError(err.message)); }
+          finally { setBusy(false); }
+        }}>
+          {busy ? "Saving…" : "Let's go →"}
+        </button>
       </div>
     </div></>
   );
