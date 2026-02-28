@@ -195,9 +195,25 @@ export default function RelationshipDrillPage({ mode }: { mode: DrillMode }) {
   const settlements = useMemo(() => {
     if (!selectedSet) return [];
     const nameMap = new Map<string, string>();
-    selectedSet.exps.forEach(e => e.participants.forEach(p => {
-      nameMap.set(p.userId, p.userId === myId ? "You" : (userMap.get(p.userId)?.displayName ?? p.displayName));
-    }));
+    const allIds = new Set<string>();
+    selectedSet.exps.forEach(e => e.participants.forEach(p => allIds.add(p.userId)));
+    const nameCounts: Record<string, number> = {};
+    allIds.forEach(uid => {
+      if (uid === myId) return;
+      const name = userMap.get(uid)?.displayName ?? "?";
+      nameCounts[name] = (nameCounts[name] ?? 0) + 1;
+    });
+    allIds.forEach(uid => {
+      if (uid === myId) { nameMap.set(uid, "You"); return; }
+      const info = userMap.get(uid);
+      const name = info?.displayName ?? "?";
+      if (nameCounts[name] > 1 && info?.email) {
+        const emailHint = info.email.split("@")[0].slice(0, 5);
+        nameMap.set(uid, `${name} (${emailHint})`);
+      } else {
+        nameMap.set(uid, name);
+      }
+    });
     return computeSettlements(selectedSet.exps, nameMap).filter(s => s.amount > 0.01);
   }, [selectedSet, myId, userMap]);
 

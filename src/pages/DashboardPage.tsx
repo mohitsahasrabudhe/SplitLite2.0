@@ -309,9 +309,27 @@ export default function DashboardPage() {
     return groups.map(g => {
       const exps = groupExpenses.filter(e => e.groupId === g.id);
       const nameMap = new Map<string, string>();
-      exps.forEach(e => e.participants.forEach(p =>
-        nameMap.set(p.userId, p.userId === myId ? "You" : (userMap.get(p.userId)?.displayName ?? "?"))
-      ));
+      // First pass: collect all display names to detect duplicates
+      const allParticipantIds = new Set<string>();
+      exps.forEach(e => e.participants.forEach(p => allParticipantIds.add(p.userId)));
+      const nameCounts: Record<string, number> = {};
+      allParticipantIds.forEach(uid => {
+        if (uid === myId) return;
+        const name = userMap.get(uid)?.displayName ?? "?";
+        nameCounts[name] = (nameCounts[name] ?? 0) + 1;
+      });
+      // Second pass: build nameMap, adding email hint for duplicate names
+      allParticipantIds.forEach(uid => {
+        if (uid === myId) { nameMap.set(uid, "You"); return; }
+        const info = userMap.get(uid);
+        const name = info?.displayName ?? "?";
+        if (nameCounts[name] > 1 && info?.email) {
+          const emailHint = info.email.split("@")[0].slice(0, 5);
+          nameMap.set(uid, `${name} (${emailHint})`);
+        } else {
+          nameMap.set(uid, name);
+        }
+      });
       const settlements = computeSettlements(exps, nameMap).filter(s => s.amount > 0.01);
       const memberIds   = new Set<string>();
       exps.forEach(e => e.participants.forEach(p => memberIds.add(p.userId)));
@@ -565,6 +583,8 @@ export default function DashboardPage() {
     const [confirmName, setConfirmName]             = useState("");
     const [deleteError, setDeleteError]             = useState<string | null>(null);
     const [deleting, setDeleting]                   = useState(false);
+    const [groupSettled, setGroupSettled]           = useState(false);
+    const [groupSettleModal, setGroupSettleModal]   = useState<{ debtorId: string; creditorId: string; debtorName: string; creditorName: string; currency: string; amount: number } | null>(null);
     const nameMatches = confirmName.trim() === group.name.trim();
 
     async function handleDeleteGroup() {
@@ -757,23 +777,48 @@ export default function DashboardPage() {
         </div>
 
         {/* Who owes what — per currency */}
+        {groupSettleModal && (() => {
+          const s = groupSettleModal;
+          const iOwe = s.debtorId === myId;
+          // netAmount: positive = they owe me (creditorId===myId), negative = I owe them
+          const netAmount = iOwe ? -s.amount : s.amount;
+          const friendId  = iOwe ? s.creditorId : s.debtorId;
+          const friendName = iOwe ? s.creditorName : s.debtorName;
+          return (
+            <SettleModal
+              friendName={friendName} friendId={friendId}
+              currency={s.currency} netAmount={netAmount}
+              onClose={() => setGroupSettleModal(null)}
+              onSettled={() => { setGroupSettleModal(null); setGroupSettled(true); setTimeout(() => window.location.reload(), 1200); }}
+            />
+          );
+        })()}
+        {groupSettled && <div className="sl-settled-banner">✅ Settled! Refreshing…</div>}
         {settlements.length > 0 && (
           <div className="sl-section-card">
             <div className="sl-section-card-header"><span className="sl-section-card-title">Who owes what</span></div>
             <div className="sl-section-card-body">
               {settlements.map((s, i) => {
-                const isMe  = s.debtorId === myId;
-                const label = isMe ? `You → ${s.creditorName}` : `${s.debtorName} → ${s.creditorId === myId ? "you" : s.creditorName}`;
-                const sym   = currencySymbol(s.currency);
+                const isMe     = s.debtorId === myId;
+                const involves = s.debtorId === myId || s.creditorId === myId;
+                const label    = isMe ? `You → ${s.creditorName}` : `${s.debtorName} → ${s.creditorId === myId ? "you" : s.creditorName}`;
+                const sym      = currencySymbol(s.currency);
                 return (
-                  <div key={i} className={`sl-breakdown-row ${isMe ? "owes" : "owed"}`}>
+                  <div key={i} className={`sl-breakdown-row ${isMe ? "owes" : "owed"}`} style={{ alignItems: "center" }}>
                     <div className="sl-br-left">
                       <div className={`sl-br-dot ${isMe ? "owes" : "owed"}`} />
                       <span className="sl-br-text">{label}</span>
                     </div>
-                    <span className={`sl-br-amount ${isMe ? "owes" : "owed"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
-                      {isMe ? "-" : "+"}{sym}{s.amount.toFixed(2)} <span style={{ fontSize: ".7rem", color: "var(--muted)", fontFamily: "inherit" }}>{s.currency}</span>
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className={`sl-br-amount ${isMe ? "owes" : "owed"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+                        {isMe ? "-" : "+"}{sym}{s.amount.toFixed(2)} <span style={{ fontSize: ".7rem", color: "var(--muted)", fontFamily: "inherit" }}>{s.currency}</span>
+                      </span>
+                      {involves && !groupSettled && (
+                        <button className="sl-curr-settle-btn" onClick={() => setGroupSettleModal(s)}>
+                          Settle →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
